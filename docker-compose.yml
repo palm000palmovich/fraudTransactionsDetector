@@ -1,0 +1,114 @@
+version: '3.8'
+
+x-common-env: &common-env
+  KAFKA_ENABLE_KRAFT: "yes"
+  KAFKA_CFG_PROCESS_ROLES: "broker,controller"
+  ALLOW_PLAINTEXT_LISTENER: "yes"
+  KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+  KAFKA_KRAFT_CLUSTER_ID: "abcdefghijklmnopqrstuv"
+  KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+  KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094"
+  KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "0@kafka-0:9093,1@kafka-1:9093,2@kafka-2:9093"
+
+services:
+  kafka-0:
+    image: bitnami/kafka:3.4
+    hostname: kafka-0
+    container_name: kafka-0
+    ports:
+      - "9094:9094"
+    environment:
+      <<: *common-env
+      KAFKA_CFG_NODE_ID: "0"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka-0:9092,EXTERNAL://127.0.0.1:9094"
+    volumes:
+      - kafka_0_data:/bitnami/kafka
+    restart: unless-stopped
+    networks:
+      - kafka-net
+
+  kafka-1:
+    image: bitnami/kafka:3.4
+    hostname: kafka-1
+    container_name: kafka-1
+    ports:
+      - "9095:9094"
+    environment:
+      <<: *common-env
+      KAFKA_CFG_NODE_ID: "1"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka-1:9092,EXTERNAL://127.0.0.1:9095"
+    volumes:
+      - kafka_1_data:/bitnami/kafka
+    restart: unless-stopped
+    networks:
+      - kafka-net
+
+  kafka-2:
+    image: bitnami/kafka:3.4
+    hostname: kafka-2
+    container_name: kafka-2
+    ports:
+      - "9096:9094"
+    environment:
+      <<: *common-env
+      KAFKA_CFG_NODE_ID: "2"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka-2:9092,EXTERNAL://127.0.0.1:9096"
+    volumes:
+      - kafka_2_data:/bitnami/kafka
+    restart: unless-stopped
+    networks:
+      - kafka-net
+
+  postgres:
+    image: postgres:15
+    container_name: postgres-admin-db
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: AdminBD
+      POSTGRES_USER: signIn
+      POSTGRES_PASSWORD: admin
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - kafka-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis-cache
+    ports:
+      - "6379:6379"
+    command: redis-server --save 20 1 --loglevel warning --requirepass admin
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - kafka-net
+
+  ui:
+    image: provectuslabs/kafka-ui:v0.7.0
+    container_name: kafka-ui
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_BOOTSTRAP_SERVERS: "kafka-0:9092,kafka-1:9092,kafka-2:9092"
+      KAFKA_CLUSTERS_0_NAME: "kraft_kafka"
+    depends_on:
+      - kafka-0
+      - kafka-1
+      - kafka-2
+    restart: unless-stopped
+    networks:
+      - kafka-net
+
+volumes:
+  kafka_0_data:
+  kafka_1_data:
+  kafka_2_data:
+  postgres_data:
+  redis_data:
+
+networks:
+  kafka-net:
+    driver: bridge
