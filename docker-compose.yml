@@ -66,8 +66,8 @@ services:
       - "5433:5432"
     environment:
       POSTGRES_DB: AdminBD
-      POSTGRES_USER: signIn
-      POSTGRES_PASSWORD: admin
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: signIn
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
