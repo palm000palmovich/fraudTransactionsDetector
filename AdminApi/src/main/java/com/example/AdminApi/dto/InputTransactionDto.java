@@ -3,20 +3,25 @@ package com.example.AdminApi.dto;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.springframework.stereotype.Component;
+import lombok.ToString;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Data
-@Component
 @NoArgsConstructor
 @AllArgsConstructor
+@ToString
 public class InputTransactionDto {
     private Long sourceId;
     private Long destinationId;
     private double amount;
-    private String currency;
     private LocalDateTime timeStamp;
-    private UUID corelationId;
+
+    private String currency;
+    private String channel;
+    private String geo;
+    private String description;
+
+    private UUID correlationId;
 }

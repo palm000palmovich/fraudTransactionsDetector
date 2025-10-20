@@ -79,7 +79,7 @@ services:
     container_name: redis-cache
     ports:
       - "6379:6379"
-    command: redis-server --save 20 1 --loglevel warning --requirepass admin
+    command: redis-server --save 20 1 --loglevel warning
     volumes:
       - redis_data:/data
     restart: unless-stopped
