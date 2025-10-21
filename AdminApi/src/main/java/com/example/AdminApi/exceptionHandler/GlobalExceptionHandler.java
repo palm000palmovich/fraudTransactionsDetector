@@ -1,18 +1,19 @@
 package com.example.AdminApi.exceptionHandler;
 
+import com.example.AdminApi.exceptions.RequestLimitException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-@RestControllerAdvice
 @Slf4j
+@RestControllerAdvice
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -41,7 +42,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleAllExceptions(Exception ex) {
-        log.error("Internal server error {}", ex);
+        log.error("Internal server error " + ex);
 
         Map<String, Object> response = Map.of(
                 "status", "INTERNAL_ERROR",
@@ -51,4 +52,17 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity.status(500).body(response);
     }
+
+    @ExceptionHandler(RequestLimitException.class)
+    public ResponseEntity<Map<String, Object>> handleRequestLimitException(RequestLimitException exception) {
+        log.error("Request limit exception " + exception);
+
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(Map.of(
+                        "status", "429",
+                        "message", "Transaction service is temporarily overloaded",
+                        "timestamp", LocalDateTime.now()
+                ));
+    }
+
 }

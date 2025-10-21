@@ -15,8 +15,8 @@ import org.springframework.kafka.support.serializer.JsonSerializer;
 import java.util.HashMap;
 import java.util.Map;
 
-@Configuration
 @Slf4j
+@Configuration
 public class KafkaConfiguration {
     @Value("${spring.kafka.bootstrap-servers}")
     private String bootstrapServers;
@@ -37,6 +37,22 @@ public class KafkaConfiguration {
     @Bean
     public KafkaTemplate<String, InputTransactionDto> acceptEventKafkaTemplate() {
         return new KafkaTemplate<>(acceptEventProducerFactory());
+    }
+
+    // Producer для Object (DLQ топик - любые сообщения)
+    @Bean
+    public ProducerFactory<String, Object> dlqProducerFactory() {
+        Map<String, Object> configProps = new HashMap<>();
+        configProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        configProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        configProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class);
+        configProps.put(JsonSerializer.ADD_TYPE_INFO_HEADERS, false);
+        return new DefaultKafkaProducerFactory<>(configProps);
+    }
+
+    @Bean
+    public KafkaTemplate<String, Object> dlqKafkaTemplate() {
+        return new KafkaTemplate<>(dlqProducerFactory());
     }
 
 }

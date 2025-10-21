@@ -2,48 +2,98 @@ package com.example.AdminApi.services;
 
 import com.example.AdminApi.dto.InputTransactionDto;
 import com.example.AdminApi.dto.MakeTransactionDto;
+import com.example.AdminApi.exceptions.RequestLimitException;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 import org.springframework.stereotype.Service;
+import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Semaphore;
 
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class TransactionService {
-    private final KafkaTemplate<String, InputTransactionDto> kafkaTemplate;
+    private final KafkaTemplate<String, InputTransactionDto> inputKafkaTemplate;
+    private final KafkaTemplate<String, Object> dlqKafkaTemplate;
 
     @Value("${app.kafka.topic.input-transactions}")
     private String inputTopic;
+    @Value("${app.kafka.topic.input-transactions-dlq}")
+    private String inputTransactionsDlq;
+    @Value("${app.transaction.max-concurrent}")
+    private int maxConcurrent;
+
+    private Semaphore transactionSemaphore;
+
+    @PostConstruct
+    public void init() {
+        this.transactionSemaphore = new Semaphore(maxConcurrent);
+    }
 
     public UUID sendTransactionToTopic(MakeTransactionDto makeTransactionDto) {
         InputTransactionDto transactionDto = convertToKafkaObject(makeTransactionDto);
         UUID correlationId = UUID.randomUUID();
         transactionDto.setCorrelationId(correlationId);
 
-        log.info("Attempt to send new object to kafka: {}", transactionDto);
+        log.info("Attempt to send new object to kafka: {}", correlationId);
+
+        boolean acquired = transactionSemaphore.tryAcquire();
+        if (!acquired) {
+            log.warn("Transaction limit exceeded. Sending to DLQ. Correlation ID: {}", correlationId);
+            sendToDlq(transactionDto, "RATE_LIMIT_EXCEEDED");
+            throw new RequestLimitException("Request limit exceeded.");
+        }
 
         CompletableFuture<SendResult<String, InputTransactionDto>> future =
-                kafkaTemplate.send(inputTopic, correlationId.toString(), transactionDto);
+                inputKafkaTemplate.send(inputTopic, correlationId.toString(), transactionDto);
 
         // Асинхронная обработка результата
         future.whenComplete((result, exception) -> {
+            transactionSemaphore.release();
             if (exception == null) {
-                log.info("Successfully sent to Kafka. Topic: {}, Partition: {}, Offset: {}",
+                log.info("Successfully sent to Kafka. Topic: {}, Partition: {}, Offset: {}, correlationId: {}",
                         inputTopic,
                         result.getRecordMetadata().partition(),
-                        result.getRecordMetadata().offset());
+                        result.getRecordMetadata().offset(),
+                        correlationId);
             } else {
-                log.error("Failed to send to Kafka topic: {}. Error: {}",
-                        inputTopic, exception.getMessage(), exception);
+                log.error("Failed to send corrId {} to Kafka topic: {}. Error: {}",
+                        correlationId, inputTopic, exception.getMessage(), exception);
             }
         });
 
         return correlationId;
+    }
+
+    private void sendToDlq(InputTransactionDto transactionDto, String reason) {
+        try {
+            log.info("Attempt to send transaction to DLQ, correlation id: {}", transactionDto.getCorrelationId());
+            Map<String, Object> dlqMessage = Map.of(
+                    "originalTransaction", transactionDto,
+                    "dlqReason", reason,
+                    "timestamp", Instant.now().toString()
+            );
+
+            dlqKafkaTemplate.send(inputTransactionsDlq, transactionDto.getCorrelationId().toString(), dlqMessage)
+                    .whenComplete((result, ex) -> {
+                        if (ex == null) {
+                            log.info("Sent to DLQ. Correlation ID: {}", transactionDto.getCorrelationId());
+                        } else {
+                            log.error("Failed to send to DLQ. Correlation ID: {}",
+                                    transactionDto.getCorrelationId(), ex);
+                        }
+                    });
+        } catch (Exception e) {
+            log.error("Critical error sending corrId " + transactionDto.getCorrelationId() +
+                    " to DLQ " + e.getMessage());
+        }
     }
 
 

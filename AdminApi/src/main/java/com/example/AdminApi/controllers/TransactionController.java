@@ -9,7 +9,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -25,7 +24,6 @@ public class TransactionController {
     @PostMapping
     public ResponseEntity<?> makeTransaction(@RequestHeader(value = "Idempotency-key", required = false) String idempotencyKey,
                                              @RequestBody @Valid MakeTransactionDto makeTransactionDto) {
-
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             Optional<IdempotencyCache> idempotencyCache = idempotencyService.getCachedResponse(idempotencyKey);
             if (idempotencyCache.isPresent()) {
