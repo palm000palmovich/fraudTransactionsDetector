@@ -1,6 +1,7 @@
 package com.example.AdminApi.dto;
 
 
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PastOrPresent;
 import jakarta.validation.constraints.Positive;
@@ -16,12 +17,12 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 @ToString
 public class MakeTransactionDto {
-    @NotNull(message = "Source ID is mandatory")
-    @Positive(message = "Source ID must be positive")
-    private Long sourceId;
-    @NotNull(message = "Destination ID is mandatory")
-    @Positive(message = "Destination ID must be positive")
-    private Long destinationId;
+    @NotNull(message = "From account is mandatory")
+    @NotBlank(message = "From account cannot be blank")
+    private String from;
+    @NotNull(message = "To account is mandatory")
+    @NotBlank(message = "To account cannot be blank")
+    private String to;
     @NotNull(message = "Amount is mandatory")
     @Positive(message = "Amount must be positive")
     private double amount;

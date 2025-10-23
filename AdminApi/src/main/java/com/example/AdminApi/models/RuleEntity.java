@@ -7,8 +7,10 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-//@Entity
-@Table(name = "Rules")
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "rules")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -30,6 +32,36 @@ public class RuleEntity {
 
     @Transient
     private RuleParams params;
+
+    // Versioning
+    @Column(name = "version")
+    private Integer version = 1;
+
+    // Timestamps
+    @Column(name = "created_at", updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
+
+    // Audit fields
+    @Column(name = "created_by")
+    private String createdBy;
+
+    @Column(name = "updated_by")
+    private String updatedBy;
+
+    // Automatically set timestamps
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now();
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
 
     // Преобразуем JSON в объект после загрузки из БД
 //    @PostLoad

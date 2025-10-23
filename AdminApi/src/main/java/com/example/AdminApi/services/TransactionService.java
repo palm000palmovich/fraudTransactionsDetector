@@ -102,8 +102,8 @@ public class TransactionService {
 
         log.info("Attempt to convert input transaction to kafka-object...");
         //Major
-        inputTransactionDto.setSourceId(makeTransactionDto.getSourceId());
-        inputTransactionDto.setDestinationId(makeTransactionDto.getDestinationId());
+        inputTransactionDto.setSourceId(makeTransactionDto.getFrom());
+        inputTransactionDto.setDestinationId(makeTransactionDto.getTo());
         inputTransactionDto.setAmount(makeTransactionDto.getAmount());
         inputTransactionDto.setTimeStamp(makeTransactionDto.getTimeStamp());
 

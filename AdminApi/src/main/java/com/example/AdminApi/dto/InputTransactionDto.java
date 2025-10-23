@@ -13,8 +13,8 @@ import java.util.UUID;
 @AllArgsConstructor
 @ToString
 public class InputTransactionDto {
-    private Long sourceId;
-    private Long destinationId;
+    private String sourceId;
+    private String destinationId;
     private double amount;
     private LocalDateTime timeStamp;
 

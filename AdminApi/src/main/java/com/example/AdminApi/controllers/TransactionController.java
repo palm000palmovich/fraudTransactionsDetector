@@ -22,19 +22,29 @@ public class TransactionController {
     private final TransactionService transactionService;
 
     @PostMapping
-    public ResponseEntity<?> makeTransaction(@RequestHeader(value = "Idempotency-key", required = false) String idempotencyKey,
+    public ResponseEntity<?> makeTransaction(@RequestHeader(value = "Idempotency-key", required = true) String idempotencyKey,
                                              @RequestBody @Valid MakeTransactionDto makeTransactionDto) {
-        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
-            Optional<IdempotencyCache> idempotencyCache = idempotencyService.getCachedResponse(idempotencyKey);
-            if (idempotencyCache.isPresent()) {
-                log.info("Returning cached response for idempotency key: {}", idempotencyKey);
-
-                return idempotencyService.convertToResponse(idempotencyCache.get().getCachedResponse());
-            }
-        } else {
-            idempotencyKey = UUID.randomUUID().toString();
+        // Validate that idempotency key is not blank
+        if (idempotencyKey.isBlank()) {
+            log.warn("Received blank Idempotency-key header");
+            return ResponseEntity
+                .badRequest()
+                .body(Map.of(
+                    "error", "BAD_REQUEST",
+                    "message", "Idempotency-key header cannot be empty"
+                ));
         }
 
+        log.info("Processing transaction with Idempotency-key: {}", idempotencyKey);
+
+        // Check if response is already cached
+        Optional<IdempotencyCache> idempotencyCache = idempotencyService.getCachedResponse(idempotencyKey);
+        if (idempotencyCache.isPresent()) {
+            log.info("Returning cached response for idempotency key: {}", idempotencyKey);
+            return idempotencyService.convertToResponse(idempotencyCache.get().getCachedResponse());
+        }
+
+        // Process new transaction
         UUID correlationId = transactionService.sendTransactionToTopic(makeTransactionDto);
 
         Map<String, Object> response = Map.of(
@@ -46,10 +56,8 @@ public class TransactionController {
 
         ResponseEntity<?> responseEntity = ResponseEntity.status(202).body(response);
 
-        //Caching answer
-        if (idempotencyKey != null) {
-            idempotencyService.cacheResponse(idempotencyKey, makeTransactionDto, responseEntity);
-        }
+        // Cache the response
+        idempotencyService.cacheResponse(idempotencyKey, makeTransactionDto, responseEntity);
 
         return responseEntity;
     }
