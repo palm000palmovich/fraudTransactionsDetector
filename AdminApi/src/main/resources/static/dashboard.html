@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Финансовый радар - Панель управления</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="dashboard-page">
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <div class="header-left">
+                <h1>Финансовый радар</h1>
+                <p class="user-info">Пользователь: <span id="userEmail">admin@example.com</span></p>
+            </div>
+            <button id="logoutBtn" class="btn btn-danger">
+                <span class="icon">🚪</span> Выход
+            </button>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Tabs Navigation -->
+        <nav class="tabs">
+            <button class="tab-btn active" data-tab="transactions">📋 Транзакции</button>
+            <button class="tab-btn" data-tab="rules">⚙️ Правила</button>
+            <button class="tab-btn" data-tab="logs">📝 Журналы</button>
+            <button class="tab-btn" data-tab="metrics">📊 Метрики</button>
+            <button class="tab-btn" data-tab="notifications">🔔 Уведомления</button>
+        </nav>
+
+        <!-- Transactions Tab -->
+        <div id="transactions" class="tab-content active">
+            <!-- Stats Cards -->
+            <div class="stats-grid">
+                <div class="stat-card stat-purple">
+                    <div class="stat-label">Всего транзакций</div>
+                    <div class="stat-value">0</div>
+                </div>
+                <div class="stat-card stat-blue">
+                    <div class="stat-label">Обработано</div>
+                    <div class="stat-value">0</div>
+                </div>
+                <div class="stat-card stat-red">
+                    <div class="stat-label">Помечено</div>
+                    <div class="stat-value">0</div>
+                </div>
+                <div class="stat-card stat-yellow">
+                    <div class="stat-label">Ожидает</div>
+                    <div class="stat-value">0</div>
+                </div>
+            </div>
+
+            <!-- Filters Bar -->
+            <div class="filters-bar" style="margin-top: 1.5rem;">
+                <select id="filterStatus" class="form-select">
+                    <option value="all">Все статусы</option>
+                    <option value="processed">Обработана</option>
+                    <option value="alerted">Помечена</option>
+                </select>
+                <select id="sortOrder" class="form-select" onchange="changeSortOrder(this.value)">
+                    <option value="newest">Сначала новые</option>
+                    <option value="oldest">Сначала старые</option>
+                </select>
+                <select id="timeRange" class="form-select" onchange="applyTimeRange(this.value)">
+                    <option value="all">Все время</option>
+                    <option value="today">Сегодня</option>
+                    <option value="week">Неделя</option>
+                    <option value="month">Месяц</option>
+                    <option value="custom">Свой диапазон...</option>
+                </select>
+                <div id="customDateRange" style="display: none; gap: 0.5rem;">
+                    <input type="datetime-local" id="dateFrom" class="form-input" style="width: auto;">
+                    <input type="datetime-local" id="dateTo" class="form-input" style="width: auto;">
+                </div>
+                <input type="text" id="searchFrom" class="form-input" placeholder="От (sourceId)...">
+                <input type="text" id="searchTo" class="form-input" placeholder="Кому (destinationId)...">
+                <input type="text" id="searchCorrelation" class="form-input" placeholder="Поиск по Correlation ID...">
+                <button class="btn btn-secondary" onclick="clearFilters()">
+                    <span class="icon">✕</span> Очистить
+                </button>
+                <button class="btn btn-success" onclick="exportCSV('transactions')">
+                    <span class="icon">📥</span> CSV
+                </button>
+            </div>
+
+            <!-- Transactions Table and Details -->
+            <div class="content-grid">
+                <div class="main-panel">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Последние транзакции</h3>
+                        </div>
+                        <div class="table-container">
+                            <table class="data-table" id="transactionsTable">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Время</th>
+                                        <th>От</th>
+                                        <th>Кому</th>
+                                        <th>Сумма</th>
+                                        <th>Статус</th>
+                                        <th>Correlation ID</th>
+                                        <th>Просмотр</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Data populated by JavaScript -->
+                                </tbody>
+                            </table>
+                            <!-- Pagination Controls -->
+                            <div class="pagination-controls" style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border-top: 1px solid var(--gray-200);">
+                                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                    <span class="text-sm text-gray">Показать:</span>
+                                    <select id="pageSize" class="form-select" style="width: auto; padding: 0.25rem 0.5rem;" onchange="changePageSize(this.value)">
+                                        <option value="10">10</option>
+                                        <option value="25">25</option>
+                                        <option value="50">50</option>
+                                        <option value="100">100</option>
+                                    </select>
+                                </div>
+                                <div id="paginationInfo" class="text-sm text-gray">
+                                    Показано 0-0 из 0
+                                </div>
+                                <div style="display: flex; gap: 0.5rem;">
+                                    <button id="prevPage" class="btn btn-secondary" onclick="prevPage()" disabled>← Назад</button>
+                                    <button id="nextPage" class="btn btn-secondary" onclick="nextPage()" disabled>Вперёд →</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="side-panel" id="transactionDetails" style="display: none;">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Детали транзакции</h3>
+                            <button class="btn-close" onclick="closeDetails()">✕</button>
+                        </div>
+                        <div class="card-body" id="detailsContent">
+                            <!-- Details populated by JavaScript -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Rules Tab -->
+        <div id="rules" class="tab-content">
+            <div class="tab-header">
+                <h2>Управление правилами</h2>
+                <button class="btn btn-primary" onclick="openRuleEditor()">
+                    <span class="icon">➕</span> Новое правило
+                </button>
+            </div>
+
+            <!-- Rule Editor Form -->
+            <div id="ruleEditor" class="card editor-card" style="display: none;">
+                <div class="card-header">
+                    <h3>Редактирование правила</h3>
+                </div>
+                <div class="card-body">
+                    <form id="ruleForm">
+                        <div class="form-group">
+                            <label>Название</label>
+                            <input type="text" id="ruleName" class="form-input" placeholder="Название правила" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Тип</label>
+                            <select id="ruleType" class="form-select" required>
+                                <option value="THRESHOLD">Threshold (пороги)</option>
+                                <option value="PATTERN">Pattern (паттерны)</option>
+                                <option value="COMPOSITE">Composite (логика)</option>
+                                <option value="ML">ML-правило</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Параметры (JSON)</label>
+                            <textarea id="ruleParams" class="form-textarea" placeholder='{"field":"amount","op":">","value":100000}'>{}</textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Приоритет</label>
+                            <input type="number" id="rulePriority" class="form-input" value="1" min="1">
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" onclick="closeRuleEditor()">Отмена</button>
+                            <button type="submit" class="btn btn-primary">Сохранить</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Rules Table -->
+            <div class="card">
+                <div class="table-container">
+                    <table class="data-table" id="rulesTable">
+                        <thead>
+                            <tr>
+                                <th>Название</th>
+                                <th>Тип</th>
+                                <th>Приоритет</th>
+                                <th>Статус</th>
+                                <th>V</th>
+                                <th>Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Data populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Logs Tab -->
+        <div id="logs" class="tab-content">
+            <div class="tab-header">
+                <h2>Журнал аудита</h2>
+                <button class="btn btn-success" onclick="exportCSV('audit')">
+                    <span class="icon">📥</span> CSV
+                </button>
+            </div>
+
+            <div class="card">
+                <div class="table-container">
+                    <table class="data-table" id="auditTable">
+                        <thead>
+                            <tr>
+                                <th>Время</th>
+                                <th>Пользователь</th>
+                                <th>Действие</th>
+                                <th>Правило ID</th>
+                                <th>Детали</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Data populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Metrics Tab -->
+        <div id="metrics" class="tab-content">
+            <div class="tab-header">
+                <h2>Метрики и статистика</h2>
+                <button class="btn btn-success" onclick="exportCSV('metrics')">
+                    <span class="icon">📥</span> CSV
+                </button>
+            </div>
+
+            <!-- Stats Cards -->
+            <div class="stats-grid">
+                <div class="stat-card stat-blue">
+                    <div class="stat-label">Обработано</div>
+                    <div class="stat-value">2440</div>
+                </div>
+                <div class="stat-card stat-red">
+                    <div class="stat-label">Помечено</div>
+                    <div class="stat-value">750</div>
+                </div>
+                <div class="stat-card stat-green">
+                    <div class="stat-label">Проверено</div>
+                    <div class="stat-value">1440</div>
+                </div>
+            </div>
+
+            <!-- Charts -->
+            <div class="card">
+                <div class="card-header">
+                    <h3>График активности за неделю</h3>
+                </div>
+                <div class="card-body">
+                    <canvas id="lineChart"></canvas>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h3>Столбчатая диаграмма</h3>
+                </div>
+                <div class="card-body">
+                    <canvas id="barChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Metrics Details -->
+            <div class="metrics-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Ключевые метрики</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="metric-row">
+                            <span>Латентность (p50)</span>
+                            <span class="metric-value">45ms</span>
+                        </div>
+                        <div class="metric-row">
+                            <span>Латентность (p95)</span>
+                            <span class="metric-value">180ms</span>
+                        </div>
+                        <div class="metric-row">
+                            <span>Throughput</span>
+                            <span class="metric-value">1,240 tx/мин</span>
+                        </div>
+                        <div class="metric-row">
+                            <span>Размер очереди</span>
+                            <span class="metric-value">23 событий</span>
+                        </div>
+                        <div class="metric-row">
+                            <span>Ошибки за день</span>
+                            <span class="metric-value error">12</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Производительность правил</h3>
+                    </div>
+                    <div class="card-body" id="rulePerformance">
+                        <!-- Populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Notifications Tab -->
+        <div id="notifications" class="tab-content">
+            <h2>Управление уведомлениями</h2>
+
+            <!-- Channel Cards -->
+            <div class="channel-grid" id="channelsGrid">
+                <!-- Populated by JavaScript -->
+            </div>
+
+            <!-- Notification Queue -->
+            <div class="card">
+                <div class="card-header">
+                    <h3>Очередь уведомлений</h3>
+                </div>
+                <div class="table-container">
+                    <table class="data-table" id="notificationsTable">
+                        <thead>
+                            <tr>
+                                <th>Notification ID</th>
+                                <th>Correlation ID</th>
+                                <th>Канал</th>
+                                <th>Статус</th>
+                                <th>Попытка</th>
+                                <th>Латенция</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- DLQ -->
+            <div class="card dlq-card">
+                <div class="card-header dlq-header">
+                    <h3>Dead Letter Queue (DLQ)</h3>
+                </div>
+                <div id="dlqContent">
+                    <div class="dlq-empty">✓ DLQ пуст</div>
+                </div>
+            </div>
+
+            <!-- Notification Metrics -->
+            <div class="metrics-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Метрики уведомлений</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="metric-row">
+                            <span>sent_total</span>
+                            <span class="metric-value success">298</span>
+                        </div>
+                        <div class="metric-row">
+                            <span>failed_total</span>
+                            <span class="metric-value error">8</span>
+                        </div>
+                        <div class="metric-row">
+                            <span>retrying_total</span>
+                            <span class="metric-value warning">3</span>
+                        </div>
+                        <div class="metric-row">
+                            <span>latency_ms (avg)</span>
+                            <span class="metric-value">268ms</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Метрики операций</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="metric-row">
+                            <span>rules_update_total</span>
+                            <span class="metric-value">24</span>
+                        </div>
+                        <div class="metric-row">
+                            <span>validation_failed_total</span>
+                            <span class="metric-value warning">3</span>
+                        </div>
+                        <div class="metric-row">
+                            <span>rules_created</span>
+                            <span class="metric-value">7</span>
+                        </div>
+                        <div class="metric-row">
+                            <span>rules_deleted</span>
+                            <span class="metric-value">2</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="js/dashboard.js"></script>
+</body>
+</html>
