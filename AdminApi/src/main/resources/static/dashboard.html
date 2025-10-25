@@ -12,9 +12,12 @@
         <div class="header-content">
             <div class="header-left">
                 <h1>Финансовый радар</h1>
-                <p class="user-info">Пользователь: <span id="userEmail">admin@example.com</span></p>
+                <p class="user-info">
+                    Пользователь: <span id="userEmail">admin@example.com</span> |
+                    Роль: <span id="userRole" style="font-weight: bold;">ADMIN</span>
+                </p>
             </div>
-            <button id="logoutBtn" class="btn btn-danger">
+            <button id="logoutBtn" class="btn btn-danger" onclick="Auth.logout()">
                 <span class="icon">🚪</span> Выход
             </button>
         </div>
@@ -26,6 +29,7 @@
             <button class="tab-btn active" data-tab="transactions">📋 Транзакции</button>
             <button class="tab-btn" data-tab="rules">⚙️ Правила</button>
             <button class="tab-btn" data-tab="logs">📝 Журналы</button>
+            <button class="tab-btn" data-tab="transaction-logs">🔍 Логи транзакций</button>
             <button class="tab-btn" data-tab="metrics">📊 Метрики</button>
             <button class="tab-btn" data-tab="notifications">🔔 Уведомления</button>
         </nav>
@@ -180,7 +184,16 @@
 
                         <div class="form-group">
                             <label>Параметры (JSON)</label>
-                            <textarea id="ruleParams" class="form-textarea" placeholder='{"field":"amount","op":">","value":100000}'>{}</textarea>
+                            <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
+                                <button type="button" class="btn btn-secondary" onclick="loadRuleExample()" style="flex: 1;">
+                                    <span class="icon">📋</span> Загрузить пример
+                                </button>
+                                <button type="button" class="btn btn-secondary" onclick="formatRuleParams()" title="Форматировать JSON">
+                                    <span class="icon">✨</span> Форматировать
+                                </button>
+                            </div>
+                            <textarea id="ruleParams" class="form-textarea" placeholder='{"field":"amount","op":">","value":100000}' style="font-family: monospace; min-height: 150px;">{}</textarea>
+                            <div id="paramsValidation" style="font-size: 0.75rem; margin-top: 0.25rem;"></div>
                         </div>
 
                         <div class="form-group">
@@ -198,6 +211,9 @@
 
             <!-- Rules Table -->
             <div class="card">
+                <div class="card-header">
+                    <h3>Список правил</h3>
+                </div>
                 <div class="table-container">
                     <table class="data-table" id="rulesTable">
                         <thead>
@@ -206,6 +222,10 @@
                                 <th>Тип</th>
                                 <th>Приоритет</th>
                                 <th>Статус</th>
+                                <th>Активность</th>
+                                <th>Всего срабатываний</th>
+                                <th>24ч / 7д</th>
+                                <th>Последнее</th>
                                 <th>V</th>
                                 <th>Действия</th>
                             </tr>
@@ -216,6 +236,45 @@
                     </table>
                 </div>
             </div>
+
+            <!-- Rules Statistics Cards -->
+            <div class="card">
+                <div class="card-header">
+                    <h3>Статистика правил</h3>
+                </div>
+                <div class="card-body">
+                    <!-- Stats Grid -->
+                    <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 1rem;">
+                        <div class="stat-card stat-purple">
+                            <div class="stat-label">Всего правил</div>
+                            <div class="stat-value" id="totalRules">0</div>
+                        </div>
+                        <div class="stat-card stat-green">
+                            <div class="stat-label">Включено</div>
+                            <div class="stat-value" id="enabledRules">0</div>
+                        </div>
+                        <div class="stat-card stat-red">
+                            <div class="stat-label">Выключено</div>
+                            <div class="stat-value" id="disabledRules">0</div>
+                        </div>
+                        <div class="stat-card stat-blue">
+                            <div class="stat-label">Срабатываний (24ч)</div>
+                            <div class="stat-value" id="totalTriggers24h">0</div>
+                        </div>
+                    </div>
+
+                    <!-- Activity Legend -->
+                    <div style="padding: 1rem; background: var(--gray-50); border-radius: 0.5rem; margin-top: 1rem;">
+                        <div style="font-size: 0.875rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--gray-700);">Уровни активности (срабатывания за 24ч):</div>
+                        <div style="display: flex; flex-wrap: wrap; gap: 1rem; font-size: 0.75rem;">
+                            <span><span class="badge badge-danger" style="font-size: 0.7rem;">🔥 Высокая</span> > 100</span>
+                            <span><span class="badge badge-warning" style="font-size: 0.7rem;">📊 Средняя</span> 11-100</span>
+                            <span><span class="badge badge-info" style="font-size: 0.7rem;">💤 Низкая</span> 1-10</span>
+                            <span><span class="badge badge-secondary" style="font-size: 0.7rem;">⚪ Нет</span> 0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Logs Tab -->
@@ -224,6 +283,37 @@
                 <h2>Журнал аудита</h2>
                 <button class="btn btn-success" onclick="exportCSV('audit')">
                     <span class="icon">📥</span> CSV
+                </button>
+            </div>
+
+            <!-- Filters Bar -->
+            <div class="filters-bar" style="margin-bottom: 1.5rem;">
+                <input type="text" id="filterAuditUsername" class="form-input" placeholder="Фильтр по пользователю...">
+
+                <select id="filterAuditAction" class="form-select">
+                    <option value="">Все действия</option>
+                    <option value="CREATE">CREATE</option>
+                    <option value="UPDATE">UPDATE</option>
+                    <option value="DELETE">DELETE</option>
+                    <option value="ENABLE">ENABLE</option>
+                    <option value="DISABLE">DISABLE</option>
+                </select>
+
+                <input type="number" id="filterAuditRuleId" class="form-input" placeholder="ID правила...">
+
+                <input type="datetime-local" id="auditDateFrom" class="form-input" title="Дата от">
+                <input type="datetime-local" id="auditDateTo" class="form-input" title="Дата до">
+
+                <select id="auditSortOrder" class="form-select">
+                    <option value="newest">Новые → Старые</option>
+                    <option value="oldest">Старые → Новые</option>
+                </select>
+
+                <button class="btn btn-primary" onclick="applyAuditFilters()">
+                    <span class="icon">🔍</span> Применить
+                </button>
+                <button class="btn btn-secondary" onclick="clearAuditFilters()">
+                    <span class="icon">✕</span> Очистить
                 </button>
             </div>
 
@@ -243,6 +333,16 @@
                             <!-- Data populated by JavaScript -->
                         </tbody>
                     </table>
+                </div>
+
+                <!-- Pagination -->
+                <div class="pagination-container" style="margin-top: 1rem; display: flex; justify-content: space-between; align-items: center;">
+                    <div class="pagination-info">
+                        Показано <span id="auditShowing">0-0</span> из <span id="auditTotal">0</span>
+                    </div>
+                    <div id="auditPagination" class="pagination">
+                        <!-- Pagination buttons populated by JavaScript -->
+                    </div>
                 </div>
             </div>
         </div>
@@ -426,9 +526,115 @@
                 </div>
             </div>
         </div>
+
+        <!-- Transaction Logs Tab -->
+        <div id="transaction-logs" class="tab-content">
+            <div class="tab-header">
+                <h2>🔍 Логи транзакций</h2>
+                <p class="subtitle">Полный жизненный цикл: API → Kafka → Rules → Notification</p>
+            </div>
+
+            <!-- Filters Bar -->
+            <div class="filters-bar" style="margin-top: 1.5rem;">
+                <input type="text" id="searchCorrelationId"
+                       placeholder="Поиск по Correlation ID (UUID)..."
+                       class="form-input"
+                       style="flex: 2;">
+
+                <select id="filterLevel" class="form-select">
+                    <option value="">Все уровни</option>
+                    <option value="INFO">📘 INFO</option>
+                    <option value="WARN">⚠️ WARN</option>
+                    <option value="ERROR">❌ ERROR</option>
+                </select>
+
+                <select id="filterComponent" class="form-select">
+                    <option value="">Все компоненты</option>
+                    <option value="API">🌐 API</option>
+                    <option value="KAFKA_PRODUCER">📤 Kafka Producer</option>
+                    <option value="KAFKA_CONSUMER">📥 Kafka Consumer</option>
+                    <option value="RULES">⚙️ Rules Engine</option>
+                    <option value="NOTIFICATION">🔔 Notification</option>
+                </select>
+
+                <input type="datetime-local" id="logsDateFrom" class="form-input" title="Дата от">
+                <input type="datetime-local" id="logsDateTo" class="form-input" title="Дата до">
+
+                <select id="logsSortOrder" class="form-select">
+                    <option value="newest">Новые → Старые</option>
+                    <option value="oldest">Старые → Новые</option>
+                </select>
+
+                <button class="btn btn-primary" onclick="TransactionLogs.search()">
+                    <span class="icon">🔍</span> Поиск
+                </button>
+                <button class="btn btn-secondary" onclick="TransactionLogs.clearFilters()">
+                    <span class="icon">✕</span> Очистить
+                </button>
+                <button class="btn btn-success" onclick="TransactionLogs.exportCSV()">
+                    <span class="icon">📥</span> CSV
+                </button>
+            </div>
+
+            <!-- Results Container -->
+            <div id="logsResultsContainer">
+
+                <!-- Timeline View (shown when searching by correlationId) -->
+                <div id="timelineView" class="card" style="display: none;">
+                    <div class="card-header">
+                        <h3>Timeline для транзакции: <code id="timelineCorrelationId" style="font-size: 0.9em; color: #6c757d;"></code></h3>
+                        <button class="btn btn-secondary" onclick="TransactionLogs.switchToTableView()">
+                            <span class="icon">📋</span> Показать таблицу
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="timelineContainer" class="timeline">
+                            <!-- Timeline items populated by JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Table View (default) -->
+                <div id="tableView" class="card">
+                    <div class="card-header">
+                        <h3>Логи транзакций</h3>
+                        <div class="pagination-info">
+                            Показано <span id="logsShowing">0-0</span> из <span id="logsTotal">0</span>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table" id="transactionLogsTable">
+                            <thead>
+                                <tr>
+                                    <th style="width: 140px;">Время</th>
+                                    <th style="width: 280px;">Correlation ID</th>
+                                    <th style="width: 80px;">Level</th>
+                                    <th style="width: 150px;">Компонент</th>
+                                    <th>Сообщение</th>
+                                    <th style="width: 100px;">Детали</th>
+                                </tr>
+                            </thead>
+                            <tbody id="transactionLogsTableBody">
+                                <tr>
+                                    <td colspan="6" style="text-align: center; padding: 2rem; color: #6c757d;">
+                                        Используйте фильтры для поиска логов транзакций
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="pagination" id="logsPagination" style="margin-top: 1rem;">
+                        <!-- Pagination buttons populated by JS -->
+                    </div>
+                </div>
+
+            </div>
+        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/transaction-logs.js"></script>
     <script src="js/dashboard.js"></script>
 </body>
 </html>

@@ -48,19 +48,19 @@ COMMENT ON COLUMN rules.params_json IS 'Rule-specific parameters in JSON format'
 
 -- Insert demo rules for testing
 -- Rule 1: High amount threshold (priority 1 - checked first)
-INSERT INTO rules (name, rule_type, priority, enabled, params_json, version, created_by) VALUES
+INSERT INTO rules (name, rule_type, priority, enabled, params_json, version, created_by, updated_by) VALUES
 ('High Amount Transfer', 'THRESHOLD', 1, true,
  '{"field":"amount","operator":">","value":100000}',
- 1, 'system');
+ 1, 'system', 'system');
 
 -- Rule 2: Pattern detection - rapid small transfers (priority 2)
-INSERT INTO rules (name, rule_type, priority, enabled, params_json, version, created_by) VALUES
+INSERT INTO rules (name, rule_type, priority, enabled, params_json, version, created_by, updated_by) VALUES
 ('Rapid Small Transfers Pattern', 'PATTERN', 2, true,
  '{"timeWindow":"PT10M","transactionLimit":5,"maxAmount":500,"patternType":"rapid_small"}',
- 1, 'system');
+ 1, 'system', 'system');
 
 -- Rule 3: Night transfer (priority 3)
-INSERT INTO rules (name, rule_type, priority, enabled, params_json, version, created_by) VALUES
+INSERT INTO rules (name, rule_type, priority, enabled, params_json, version, created_by, updated_by) VALUES
 ('Night High Transfer', 'THRESHOLD', 3, false,
  '{"field":"amount","operator":">","value":50000}',
- 1, 'system');
+ 1, 'system', 'system');

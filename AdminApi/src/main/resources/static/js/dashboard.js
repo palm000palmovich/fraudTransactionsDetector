@@ -1,10 +1,13 @@
 // API Configuration
-const API_BASE = '/api/admin';
+const API_BASE = '/api';
 
 // Data
 let transactions = [];
 let rules = [];
 let auditLog = [];
+let auditCurrentPage = 0;
+let auditPageSize = 50;
+let auditTotalPages = 0;
 let notificationChannels = [
     { id: 1, name: 'Email', enabled: true, sent: 142, failed: 3, retrying: 1, avgLatency: 340 },
     { id: 2, name: 'Slack', enabled: true, sent: 89, failed: 2, retrying: 0, avgLatency: 180 },
@@ -34,15 +37,40 @@ let customDateTo = null;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', function() {
-    // Check if user is logged in
-    const userStr = sessionStorage.getItem('user');
-    if (!userStr) {
+    // Check if user is authenticated using Auth module
+    if (!Auth.isAuthenticated()) {
         window.location.href = 'login.html';
         return;
     }
 
-    currentUser = JSON.parse(userStr);
-    document.getElementById('userEmail').textContent = currentUser.email;
+    // Load user object from sessionStorage (for backward compatibility)
+    const userStr = sessionStorage.getItem('user');
+    if (userStr) {
+        currentUser = JSON.parse(userStr);
+    } else {
+        // Fallback: create user object from Auth module data
+        currentUser = {
+            username: Auth.getUsername(),
+            email: Auth.getUsername(),
+            role: Auth.getRole()
+        };
+    }
+
+    // Display user email and role
+    const userEmail = document.getElementById('userEmail');
+    if (userEmail) {
+        userEmail.textContent = currentUser.email || currentUser.username;
+    }
+
+    const userRole = document.getElementById('userRole');
+    if (userRole) {
+        userRole.textContent = currentUser.role;
+    }
+
+    // Hide edit/delete buttons for viewers
+    if (Auth.isViewer()) {
+        applyViewerRestrictions();
+    }
 
     // Initialize tabs
     initializeTabs();
@@ -71,7 +99,26 @@ document.addEventListener('DOMContentLoaded', function() {
         customDateTo = document.getElementById('dateTo').value;
         loadTransactions();
     });
+
+    // Event listener for rule params validation
+    const ruleParamsTextarea = document.getElementById('ruleParams');
+    if (ruleParamsTextarea) {
+        ruleParamsTextarea.addEventListener('input', validateRuleParams);
+        ruleParamsTextarea.addEventListener('blur', validateRuleParams);
+    }
 });
+
+// Apply viewer restrictions (hide edit/delete buttons)
+function applyViewerRestrictions() {
+    // Hide "Create Rule" button
+    const createRuleBtn = document.querySelector('button[onclick="openRuleEditor()"]');
+    if (createRuleBtn) {
+        createRuleBtn.style.display = 'none';
+    }
+
+    // Add a visual indicator that user is in read-only mode
+    console.log('Viewer mode: Edit and delete buttons will be hidden');
+}
 
 // Tab switching
 function initializeTabs() {
@@ -95,14 +142,19 @@ function initializeTabs() {
 
 // Logout
 function handleLogout() {
-    sessionStorage.removeItem('user');
-    window.location.href = 'login.html';
+    Auth.logout(); // Use Auth module logout which clears everything
 }
 
 // Load statistics
 async function loadStats() {
     try {
-        const response = await fetch(`${API_BASE}/transactions/stats`);
+        const response = await Auth.fetch(`${API_BASE}/transactions/stats`);
+
+        if (response.status === 403) {
+            alert('У вас нет прав для просмотра статистики');
+            return;
+        }
+
         if (!response.ok) throw new Error('Failed to fetch stats');
 
         const stats = await response.json();
@@ -168,7 +220,13 @@ async function loadTransactions() {
 
         url += '?' + params.toString();
 
-        const response = await fetch(url);
+        const response = await Auth.fetch(url);
+
+        if (response.status === 403) {
+            alert('У вас нет прав для просмотра транзакций');
+            return;
+        }
+
         if (!response.ok) throw new Error('Failed to fetch transactions');
 
         const pagedResponse = await response.json();
@@ -441,33 +499,138 @@ function calculateTimeRange(range) {
     };
 }
 
-// Load rules
+// Helper function to parse date (supports both ISO string and array format from Java)
+function parseDate(dateValue) {
+    if (!dateValue) return null;
+
+    // If it's an array [year, month, day, hour, minute, second, nano]
+    if (Array.isArray(dateValue)) {
+        const [year, month, day, hour, minute, second] = dateValue;
+        // JavaScript months are 0-indexed, Java months are 1-indexed
+        return new Date(year, month - 1, day, hour || 0, minute || 0, second || 0);
+    }
+
+    // Otherwise try parsing as ISO string
+    return new Date(dateValue);
+}
+
+// Load rules with metrics
 async function loadRules() {
     try {
-        const response = await fetch(`${API_BASE}/rules`);
-        if (!response.ok) throw new Error('Failed to fetch rules');
+        // Load rules and metrics in parallel
+        const [rulesResponse, metricsResponse] = await Promise.all([
+            Auth.fetch(`${API_BASE}/rules`),
+            Auth.fetch(`${API_BASE}/rules/metrics`)
+        ]);
 
-        rules = await response.json();
+        if (rulesResponse.status === 403) {
+            alert('У вас нет прав для просмотра правил');
+            return;
+        }
+
+        if (!rulesResponse.ok) throw new Error('Failed to fetch rules');
+        if (!metricsResponse.ok) throw new Error('Failed to fetch metrics');
+
+        rules = await rulesResponse.json();
+        const metrics = await metricsResponse.json();
+
+        // Sort rules by priority (to keep consistent order)
+        rules.sort((a, b) => a.priority - b.priority);
+
+        // Create metrics map by ruleId for quick lookup
+        const metricsMap = {};
+        metrics.forEach(m => metricsMap[m.ruleId] = m);
+
+        // Calculate statistics for cards
+        const totalRules = rules.length;
+        const enabledRules = rules.filter(r => r.enabled).length;
+        const disabledRules = totalRules - enabledRules;
+        const totalTriggers24h = metrics.reduce((sum, m) => sum + (m.triggersLast24h || 0), 0);
+
+        // Update statistics cards
+        document.getElementById('totalRules').textContent = totalRules;
+        document.getElementById('enabledRules').textContent = enabledRules;
+        document.getElementById('disabledRules').textContent = disabledRules;
+        document.getElementById('totalTriggers24h').textContent = totalTriggers24h.toLocaleString();
 
         const tbody = document.querySelector('#rulesTable tbody');
         tbody.innerHTML = '';
 
+        const isViewer = Auth.isViewer();
+
         rules.forEach(rule => {
             const row = document.createElement('tr');
+            row.setAttribute('data-rule-id', rule.id); // Add ID for easy updates
+            const ruleMetrics = metricsMap[rule.id] || {};
+
+            // Enhanced status indicator with icon
+            const statusIcon = rule.enabled ? '🟢' : '🔴';
+            const statusText = rule.enabled ? 'Включено' : 'Выключено';
+            const statusCell = isViewer
+                ? `<span class="badge ${rule.enabled ? 'status-enabled' : 'status-disabled'}" title="${statusText}">${statusIcon} ${rule.enabled ? 'Вкл' : 'Выкл'}</span>`
+                : `<button class="badge ${rule.enabled ? 'status-enabled' : 'status-disabled'}" onclick="toggleRule(${rule.id})" title="Переключить">${statusIcon} ${rule.enabled ? 'Вкл' : 'Выкл'}</button>`;
+
+            // Metrics cells
+            const totalTriggers = ruleMetrics.totalTriggers || 0;
+            const triggers24h = ruleMetrics.triggersLast24h || 0;
+            const triggers7d = ruleMetrics.triggersLast7d || 0;
+
+            // Format last triggered time with proper date parsing
+            let lastTriggered = '-';
+            if (ruleMetrics.lastTriggered) {
+                const date = parseDate(ruleMetrics.lastTriggered);
+                if (date && !isNaN(date.getTime())) {
+                    const now = new Date();
+                    const diffMs = now - date;
+                    const diffMins = Math.floor(diffMs / 60000);
+                    const diffHours = Math.floor(diffMs / 3600000);
+                    const diffDays = Math.floor(diffMs / 86400000);
+
+                    if (diffMins < 1) {
+                        lastTriggered = 'только что';
+                    } else if (diffMins < 60) {
+                        lastTriggered = `${diffMins} мин назад`;
+                    } else if (diffHours < 24) {
+                        lastTriggered = `${diffHours} ч назад`;
+                    } else {
+                        lastTriggered = `${diffDays} дн назад`;
+                    }
+                } else {
+                    lastTriggered = 'ошибка даты';
+                }
+            }
+
+            // Activity indicator based on recent triggers (moved to separate column)
+            let activityBadge = '';
+            if (triggers24h > 100) {
+                activityBadge = '<span class="badge badge-danger" style="font-size: 0.7rem;">🔥 Высокая</span>';
+            } else if (triggers24h > 10) {
+                activityBadge = '<span class="badge badge-warning" style="font-size: 0.7rem;">📊 Средняя</span>';
+            } else if (triggers24h > 0) {
+                activityBadge = '<span class="badge badge-info" style="font-size: 0.7rem;">💤 Низкая</span>';
+            } else {
+                activityBadge = '<span class="badge badge-secondary" style="font-size: 0.7rem;">⚪ Нет</span>';
+            }
+
+            // Enhanced action buttons
+            const actionsCell = isViewer
+                ? `<button class="btn-icon btn-view" onclick="viewRuleDetails(${rule.id})" title="Просмотр">👁️</button>`
+                : `<div class="btn-group">
+                     <button class="btn-icon btn-edit" onclick="editRule(${rule.id})" title="Редактировать">✏️</button>
+                     <button class="btn-icon btn-delete" onclick="deleteRule(${rule.id})" title="Удалить">🗑️</button>
+                   </div>`;
+
             row.innerHTML = `
                 <td><strong>${rule.name}</strong></td>
                 <td><span class="badge badge-info">${rule.ruleType}</span></td>
-                <td>${rule.priority}</td>
-                <td>
-                    <button class="badge ${rule.enabled ? 'status-enabled' : 'status-disabled'}" onclick="toggleRule(${rule.id})">
-                        ${rule.enabled ? '✓ Вкл' : '✗ Выкл'}
-                    </button>
-                </td>
+                <td style="text-align: center;"><strong>${rule.priority}</strong></td>
+                <td>${statusCell}</td>
+                <td style="text-align: center;">${activityBadge}</td>
+                <td style="text-align: right;"><strong>${totalTriggers.toLocaleString()}</strong></td>
+                <td style="text-align: right;"><span class="text-mono">${triggers24h} / ${triggers7d}</span></td>
+                <td><span class="text-sm text-gray">${lastTriggered}</span></td>
                 <td class="text-mono">${rule.version}</td>
-                <td style="text-align: right;">
-                    <button class="btn-icon btn-edit" onclick="editRule(${rule.id})">✏️</button>
-                    <button class="btn-icon btn-delete" onclick="deleteRule(${rule.id})">🗑️</button>
-                </td>
+                <td style="text-align: right;">${actionsCell}</td>
             `;
             tbody.appendChild(row);
         });
@@ -475,12 +638,16 @@ async function loadRules() {
         // Update rule performance
         const perfContainer = document.getElementById('rulePerformance');
         if (perfContainer) {
-            perfContainer.innerHTML = rules.map(rule => `
-                <div class="metric-row">
-                    <span>${rule.name}</span>
-                    <span class="text-mono text-xs text-gray">~2-5ms</span>
-                </div>
-            `).join('');
+            perfContainer.innerHTML = rules.map(rule => {
+                const m = metricsMap[rule.id] || {};
+                const triggers = m.triggersLast24h || 0;
+                return `
+                    <div class="metric-row">
+                        <span>${rule.name}</span>
+                        <span class="text-mono text-xs text-gray">${triggers} срабатываний</span>
+                    </div>
+                `;
+            }).join('');
         }
     } catch (error) {
         console.error('Error loading rules:', error);
@@ -491,9 +658,14 @@ async function loadRules() {
 // Toggle rule
 async function toggleRule(ruleId) {
     try {
-        const response = await fetch(`${API_BASE}/rules/${ruleId}/toggle`, {
+        const response = await Auth.fetch(`${API_BASE}/rules/${ruleId}/toggle`, {
             method: 'PATCH',
         });
+
+        if (response.status === 403) {
+            alert('У вас нет прав для изменения правил');
+            return;
+        }
 
         if (!response.ok) throw new Error('Failed to toggle rule');
 
@@ -505,11 +677,185 @@ async function toggleRule(ruleId) {
             rules[index] = updatedRule;
         }
 
-        loadRules();
-        addAuditLog(updatedRule.enabled ? 'ENABLE' : 'DISABLE', ruleId, `Правило ${updatedRule.enabled ? 'включено' : 'отключено'}`);
+        // Update only the specific row in the table (without full reload)
+        const row = document.querySelector(`tr[data-rule-id="${ruleId}"]`);
+        if (row) {
+            const statusIcon = updatedRule.enabled ? '🟢' : '🔴';
+            const statusText = updatedRule.enabled ? 'Включено' : 'Выключено';
+            const statusCell = row.querySelector('td:nth-child(4)'); // Status column
+
+            if (statusCell) {
+                statusCell.innerHTML = `<button class="badge ${updatedRule.enabled ? 'status-enabled' : 'status-disabled'}" onclick="toggleRule(${ruleId})" title="Переключить">${statusIcon} ${updatedRule.enabled ? 'Вкл' : 'Выкл'}</button>`;
+            }
+        }
+
+        // Update statistics cards
+        const enabledCount = rules.filter(r => r.enabled).length;
+        const disabledCount = rules.length - enabledCount;
+        document.getElementById('enabledRules').textContent = enabledCount;
+        document.getElementById('disabledRules').textContent = disabledCount;
+
+        loadAuditLog(); // Reload audit log to show the change
     } catch (error) {
         console.error('Error toggling rule:', error);
         alert('Ошибка переключения правила: ' + error.message);
+    }
+}
+
+// Rule example templates
+const RULE_EXAMPLES = {
+    THRESHOLD: {
+        'Large Amount (>10000)': {
+            field: "amount",
+            operator: ">",
+            threshold: 10000
+        },
+        'Non-USD Currency': {
+            field: "currency",
+            operator: "!=",
+            value: "USD"
+        },
+        'Night Transaction (hour >= 22)': {
+            field: "hour",
+            operator: ">=",
+            threshold: 22
+        },
+        'High-risk Country': {
+            field: "geo",
+            operator: "==",
+            value: "XX"
+        }
+    },
+    PATTERN: {
+        'Rapid Small Transfers': {
+            patternType: "rapid_small_transfers",
+            timeWindowMinutes: 10,
+            minCount: 5,
+            maxAmount: 500,
+            groupBy: "from"
+        },
+        'Rapid Small Transfers (to same destination)': {
+            patternType: "rapid_small_transfers",
+            timeWindowMinutes: 5,
+            minCount: 3,
+            maxAmount: 150,
+            groupBy: "to"
+        }
+    },
+    COMPOSITE: {
+        'Large Amount AND Night (AND logic)': {
+            operator: "AND",
+            conditions: [
+                {
+                    field: "amount",
+                    operator: ">",
+                    value: 5000
+                },
+                {
+                    field: "hour",
+                    operator: ">=",
+                    value: 22
+                }
+            ]
+        },
+        'Very Large OR Non-USD (OR logic)': {
+            operator: "OR",
+            conditions: [
+                {
+                    field: "amount",
+                    operator: ">",
+                    value: 100000
+                },
+                {
+                    field: "currency",
+                    operator: "!=",
+                    value: "USD"
+                }
+            ]
+        }
+    },
+    ML: {
+        'ML Model Example': {
+            modelName: "fraud_detector_v1",
+            threshold: 0.75,
+            features: ["amount", "hour", "geo", "channel"]
+        }
+    }
+};
+
+// Load rule example based on selected type
+function loadRuleExample() {
+    const ruleType = document.getElementById('ruleType').value;
+    const examples = RULE_EXAMPLES[ruleType];
+
+    if (!examples) {
+        alert('Нет примеров для данного типа правила');
+        return;
+    }
+
+    const exampleNames = Object.keys(examples);
+
+    if (exampleNames.length === 1) {
+        // Only one example, load it directly
+        const exampleJson = examples[exampleNames[0]];
+        document.getElementById('ruleParams').value = JSON.stringify(exampleJson, null, 2);
+        validateRuleParams();
+    } else {
+        // Multiple examples, show selection
+        let message = `Выберите пример для типа ${ruleType}:\n\n`;
+        exampleNames.forEach((name, index) => {
+            message += `${index + 1}. ${name}\n`;
+        });
+
+        const choice = prompt(message + '\nВведите номер примера (1-' + exampleNames.length + '):');
+        const choiceIndex = parseInt(choice) - 1;
+
+        if (choiceIndex >= 0 && choiceIndex < exampleNames.length) {
+            const selectedName = exampleNames[choiceIndex];
+            const exampleJson = examples[selectedName];
+            document.getElementById('ruleParams').value = JSON.stringify(exampleJson, null, 2);
+            validateRuleParams();
+        }
+    }
+}
+
+// Format rule params JSON
+function formatRuleParams() {
+    const textarea = document.getElementById('ruleParams');
+    const value = textarea.value.trim();
+
+    if (!value) {
+        return;
+    }
+
+    try {
+        const parsed = JSON.parse(value);
+        textarea.value = JSON.stringify(parsed, null, 2);
+        validateRuleParams();
+    } catch (e) {
+        alert('Ошибка форматирования: Некорректный JSON\n\n' + e.message);
+    }
+}
+
+// Validate rule params JSON
+function validateRuleParams() {
+    const textarea = document.getElementById('ruleParams');
+    const validationDiv = document.getElementById('paramsValidation');
+    const value = textarea.value.trim();
+
+    if (!value) {
+        validationDiv.innerHTML = '';
+        validationDiv.style.color = '';
+        return true;
+    }
+
+    try {
+        const parsed = JSON.parse(value);
+        validationDiv.innerHTML = '<span style="color: var(--green-600);">✓ JSON корректен</span>';
+        return true;
+    } catch (e) {
+        validationDiv.innerHTML = '<span style="color: var(--red-600);">✗ Ошибка JSON: ' + e.message + '</span>';
+        return false;
     }
 }
 
@@ -519,6 +865,7 @@ function openRuleEditor() {
     document.getElementById('ruleEditor').style.display = 'block';
     document.getElementById('ruleForm').reset();
     document.getElementById('ruleParams').value = '{}';
+    validateRuleParams();
 }
 
 // Edit rule
@@ -530,8 +877,17 @@ function editRule(ruleId) {
     document.getElementById('ruleEditor').style.display = 'block';
     document.getElementById('ruleName').value = rule.name;
     document.getElementById('ruleType').value = rule.ruleType;
-    document.getElementById('ruleParams').value = rule.paramsJson;
+
+    // Format and validate params
+    try {
+        const parsed = JSON.parse(rule.paramsJson);
+        document.getElementById('ruleParams').value = JSON.stringify(parsed, null, 2);
+    } catch (e) {
+        document.getElementById('ruleParams').value = rule.paramsJson;
+    }
+
     document.getElementById('rulePriority').value = rule.priority;
+    validateRuleParams();
 }
 
 // Close rule editor
@@ -547,16 +903,21 @@ async function deleteRule(ruleId) {
     }
 
     try {
-        const response = await fetch(`${API_BASE}/rules/${ruleId}`, {
+        const response = await Auth.fetch(`${API_BASE}/rules/${ruleId}`, {
             method: 'DELETE',
         });
+
+        if (response.status === 403) {
+            alert('У вас нет прав для удаления правил');
+            return;
+        }
 
         if (!response.ok) throw new Error('Failed to delete rule');
 
         // Remove from local data
         rules = rules.filter(r => r.id !== ruleId);
         loadRules();
-        addAuditLog('DELETE', ruleId, 'Правило удалено');
+        loadAuditLog(); // Reload audit log to show the change
     } catch (error) {
         console.error('Error deleting rule:', error);
         alert('Ошибка удаления правила: ' + error.message);
@@ -569,6 +930,12 @@ document.addEventListener('DOMContentLoaded', function() {
     if (ruleForm) {
         ruleForm.addEventListener('submit', async function(e) {
             e.preventDefault();
+
+            // Validate JSON before submission
+            if (!validateRuleParams()) {
+                alert('Пожалуйста, исправьте ошибки в JSON параметрах перед сохранением');
+                return;
+            }
 
             const ruleData = {
                 name: document.getElementById('ruleName').value,
@@ -583,13 +950,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 if (editingRule) {
                     // Update existing rule
-                    response = await fetch(`${API_BASE}/rules/${editingRule.id}`, {
+                    response = await Auth.fetch(`${API_BASE}/rules/${editingRule.id}`, {
                         method: 'PUT',
                         headers: {
                             'Content-Type': 'application/json',
                         },
                         body: JSON.stringify(ruleData),
                     });
+
+                    if (response.status === 403) {
+                        alert('У вас нет прав для изменения правил');
+                        return;
+                    }
 
                     if (!response.ok) throw new Error('Failed to update rule');
 
@@ -598,10 +970,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (index !== -1) {
                         rules[index] = updatedRule;
                     }
-                    addAuditLog('UPDATE', updatedRule.id, 'Правило обновлено');
                 } else {
                     // Create new rule
-                    response = await fetch(`${API_BASE}/rules`, {
+                    response = await Auth.fetch(`${API_BASE}/rules`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -609,14 +980,19 @@ document.addEventListener('DOMContentLoaded', function() {
                         body: JSON.stringify(ruleData),
                     });
 
+                    if (response.status === 403) {
+                        alert('У вас нет прав для создания правил');
+                        return;
+                    }
+
                     if (!response.ok) throw new Error('Failed to create rule');
 
                     const newRule = await response.json();
                     rules.push(newRule);
-                    addAuditLog('CREATE', newRule.id, 'Создано новое правило');
                 }
 
                 loadRules();
+                loadAuditLog(); // Reload audit log to show the change
                 closeRuleEditor();
             } catch (error) {
                 console.error('Error saving rule:', error);
@@ -627,37 +1003,152 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // Load audit log
-function loadAuditLog() {
-    const tbody = document.querySelector('#auditTable tbody');
-    tbody.innerHTML = '';
+async function loadAuditLog() {
+    try {
+        const username = document.getElementById('filterAuditUsername')?.value || '';
+        const action = document.getElementById('filterAuditAction')?.value || '';
+        const ruleId = document.getElementById('filterAuditRuleId')?.value || '';
+        const dateFrom = document.getElementById('auditDateFrom')?.value || '';
+        const dateTo = document.getElementById('auditDateTo')?.value || '';
+        const sort = document.getElementById('auditSortOrder')?.value || 'newest';
 
-    auditLog.forEach(entry => {
-        const row = document.createElement('tr');
-        const actionClass = entry.action === 'CREATE' ? 'badge-success' :
-                           entry.action === 'DELETE' ? 'badge-danger' : 'badge-info';
+        const params = new URLSearchParams();
+        if (username) params.append('username', username);
+        if (action) params.append('action', action);
+        if (ruleId) params.append('ruleId', ruleId);
+        if (dateFrom) params.append('dateFrom', dateFrom);
+        if (dateTo) params.append('dateTo', dateTo);
+        params.append('page', auditCurrentPage);
+        params.append('size', auditPageSize);
+        params.append('sort', sort);
 
-        row.innerHTML = `
-            <td class="text-mono text-xs text-gray">${entry.timestamp}</td>
-            <td>${entry.user}</td>
-            <td><span class="badge ${actionClass}">${entry.action}</span></td>
-            <td class="text-mono">${entry.ruleId || '-'}</td>
-            <td class="text-gray">${entry.details}</td>
-        `;
-        tbody.appendChild(row);
-    });
+        const response = await Auth.fetch(`${API_BASE}/audit-logs?${params.toString()}`);
+
+        if (response.status === 403) {
+            console.warn('No access to audit logs');
+            return;
+        }
+
+        if (!response.ok) throw new Error('Failed to fetch audit logs');
+
+        const pagedResponse = await response.json();
+        auditLog = pagedResponse.content;
+        auditTotalPages = pagedResponse.totalPages;
+
+        const tbody = document.querySelector('#auditTable tbody');
+        tbody.innerHTML = '';
+
+        if (auditLog.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 2rem; color: #6c757d;">Нет записей в журнале аудита</td></tr>';
+            updateAuditPaginationInfo(0, 0, 0);
+            renderAuditPagination(pagedResponse);
+            return;
+        }
+
+        auditLog.forEach(entry => {
+            const row = document.createElement('tr');
+            const actionClass = entry.action === 'CREATE' ? 'badge-success' :
+                               entry.action === 'DELETE' ? 'badge-danger' :
+                               entry.action === 'ENABLE' ? 'badge-success' :
+                               entry.action === 'DISABLE' ? 'badge-warning' : 'badge-info';
+
+            row.innerHTML = `
+                <td class="text-mono text-xs text-gray">${formatTimestamp(entry.timestamp)}</td>
+                <td>${entry.username}</td>
+                <td><span class="badge ${actionClass}">${entry.action}</span></td>
+                <td class="text-mono">${entry.ruleId || '-'}</td>
+                <td class="text-gray">${entry.details || '-'}</td>
+            `;
+            tbody.appendChild(row);
+        });
+
+        // Update pagination info
+        const from = pagedResponse.currentPage * pagedResponse.pageSize + 1;
+        const to = Math.min((pagedResponse.currentPage + 1) * pagedResponse.pageSize, pagedResponse.totalElements);
+        updateAuditPaginationInfo(from, to, pagedResponse.totalElements);
+
+        // Render pagination buttons
+        renderAuditPagination(pagedResponse);
+    } catch (error) {
+        console.error('Error loading audit logs:', error);
+    }
 }
 
-// Add audit log entry
-function addAuditLog(action, ruleId, details) {
-    const entry = {
-        id: auditLog.length + 1,
-        timestamp: new Date().toLocaleString('ru-RU'),
-        user: currentUser.email,
-        action: action,
-        ruleId: ruleId,
-        details: details,
-    };
-    auditLog.unshift(entry);
+// Apply audit filters
+function applyAuditFilters() {
+    auditCurrentPage = 0;
+    loadAuditLog();
+}
+
+// Clear audit filters
+function clearAuditFilters() {
+    document.getElementById('filterAuditUsername').value = '';
+    document.getElementById('filterAuditAction').value = '';
+    document.getElementById('filterAuditRuleId').value = '';
+    document.getElementById('auditDateFrom').value = '';
+    document.getElementById('auditDateTo').value = '';
+    document.getElementById('auditSortOrder').value = 'newest';
+    auditCurrentPage = 0;
+    loadAuditLog();
+}
+
+// Update audit pagination info
+function updateAuditPaginationInfo(from, to, total) {
+    document.getElementById('auditShowing').textContent = `${from}-${to}`;
+    document.getElementById('auditTotal').textContent = total;
+}
+
+// Render audit pagination buttons
+function renderAuditPagination(data) {
+    const container = document.getElementById('auditPagination');
+
+    if (data.totalPages <= 1) {
+        container.innerHTML = '';
+        return;
+    }
+
+    let html = '';
+
+    // Previous button
+    if (!data.first) {
+        html += `<button class="btn btn-secondary" onclick="goToAuditPage(${data.currentPage - 1})">← Пред</button>`;
+    }
+
+    // Page numbers
+    const maxButtons = 5;
+    let startPage = Math.max(0, data.currentPage - Math.floor(maxButtons / 2));
+    let endPage = Math.min(data.totalPages - 1, startPage + maxButtons - 1);
+
+    if (endPage - startPage < maxButtons - 1) {
+        startPage = Math.max(0, endPage - maxButtons + 1);
+    }
+
+    if (startPage > 0) {
+        html += `<button class="btn btn-secondary" onclick="goToAuditPage(0)">1</button>`;
+        if (startPage > 1) html += `<span style="padding: 0 0.5rem;">...</span>`;
+    }
+
+    for (let i = startPage; i <= endPage; i++) {
+        const isActive = i === data.currentPage ? 'btn-primary' : 'btn-secondary';
+        html += `<button class="btn ${isActive}" onclick="goToAuditPage(${i})">${i + 1}</button>`;
+    }
+
+    if (endPage < data.totalPages - 1) {
+        if (endPage < data.totalPages - 2) html += `<span style="padding: 0 0.5rem;">...</span>`;
+        html += `<button class="btn btn-secondary" onclick="goToAuditPage(${data.totalPages - 1}))">${data.totalPages}</button>`;
+    }
+
+    // Next button
+    if (!data.last) {
+        html += `<button class="btn btn-secondary" onclick="goToAuditPage(${data.currentPage + 1})">След →</button>`;
+    }
+
+    container.innerHTML = html;
+}
+
+// Go to specific audit page
+function goToAuditPage(page) {
+    auditCurrentPage = page;
     loadAuditLog();
 }
 
@@ -855,4 +1346,46 @@ function exportCSV(type) {
     link.href = URL.createObjectURL(blob);
     link.download = filename;
     link.click();
+}
+
+// View rule details (for viewers)
+function viewRuleDetails(ruleId) {
+    const rule = rules.find(r => r.id === ruleId);
+    if (!rule) {
+        alert('Правило не найдено');
+        return;
+    }
+
+    // Format JSON for better readability
+    let formattedParams = rule.paramsJson;
+    try {
+        const parsed = JSON.parse(rule.paramsJson);
+        formattedParams = JSON.stringify(parsed, null, 2);
+    } catch (e) {
+        // If not valid JSON, use as is
+    }
+
+    const details = `
+╔════════════════════════════════════════════╗
+║          ДЕТАЛИ ПРАВИЛА                   ║
+╚════════════════════════════════════════════╝
+
+📋 Название: ${rule.name}
+
+🔧 Тип: ${rule.ruleType}
+
+📊 Приоритет: ${rule.priority}
+
+🔢 Версия: ${rule.version}
+
+⚡ Статус: ${rule.enabled ? '✓ Включено' : '✗ Выключено'}
+
+📝 Параметры:
+${formattedParams}
+
+📅 Создано: ${rule.createdAt ? new Date(rule.createdAt).toLocaleString('ru-RU') : 'N/A'}
+📅 Обновлено: ${rule.updatedAt ? new Date(rule.updatedAt).toLocaleString('ru-RU') : 'N/A'}
+    `.trim();
+
+    alert(details);
 }

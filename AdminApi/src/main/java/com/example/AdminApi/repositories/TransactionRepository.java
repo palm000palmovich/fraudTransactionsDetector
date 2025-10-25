@@ -57,4 +57,16 @@ public interface TransactionRepository extends JpaRepository<TransactionEntity, 
             @Param("dateTo") LocalDateTime dateTo,
             Pageable pageable
     );
+
+    // ====== Rule Metrics Queries ======
+
+    // Count total triggers for a specific rule
+    long countByTriggeredRuleId(Long ruleId);
+
+    // Count triggers for a rule within a time range
+    long countByTriggeredRuleIdAndProcessedAtAfter(Long ruleId, LocalDateTime after);
+
+    // Find the latest triggered transaction for a rule
+    @Query("SELECT t FROM TransactionEntity t WHERE t.triggeredRuleId = :ruleId ORDER BY t.processedAt DESC")
+    List<TransactionEntity> findLatestByTriggeredRuleId(@Param("ruleId") Long ruleId, Pageable pageable);
 }

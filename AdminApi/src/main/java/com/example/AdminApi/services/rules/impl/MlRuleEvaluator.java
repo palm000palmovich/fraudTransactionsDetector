@@ -26,14 +26,14 @@ import org.springframework.stereotype.Component;
 public class MlRuleEvaluator implements RuleEvaluator {
 
     @Override
-    public boolean evaluate(TransactionEntity transaction, RuleEntity rule) {
-        // TODO: Phase 6 - Implement ML model integration
+    public boolean evaluate(TransactionEntity transaction, RuleEntity rule, com.example.AdminApi.dto.EvaluationContext context) {
+        // TODO: Implement ML model integration (context may provide feature extraction)
         log.debug("ML_MODEL rule evaluation not yet implemented (ruleId={})", rule.getId());
         return false;
     }
 
     @Override
-    public String getReason(TransactionEntity transaction, RuleEntity rule) {
+    public String getReason(TransactionEntity transaction, RuleEntity rule, com.example.AdminApi.dto.EvaluationContext context) {
         return "ML model evaluation not yet implemented";
     }
 

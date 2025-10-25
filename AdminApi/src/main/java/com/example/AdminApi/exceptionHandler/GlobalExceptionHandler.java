@@ -34,7 +34,7 @@ public class GlobalExceptionHandler {
                 "status", "VALIDATION_ERROR",
                 "message", "Invalid request parameters",
                 "errors", errors,
-                "timestamp", LocalDateTime.now()
+                "timestamp", LocalDateTime.now().toString()
         );
 
         return ResponseEntity.status(400).body(response);
@@ -47,7 +47,7 @@ public class GlobalExceptionHandler {
         Map<String, Object> response = Map.of(
                 "status", "INTERNAL_ERROR",
                 "message", "Internal server error occurred",
-                "timestamp", LocalDateTime.now()
+                "timestamp", LocalDateTime.now().toString()
         );
 
         return ResponseEntity.status(500).body(response);
@@ -61,7 +61,7 @@ public class GlobalExceptionHandler {
                 .body(Map.of(
                         "status", "429",
                         "message", "Transaction service is temporarily overloaded",
-                        "timestamp", LocalDateTime.now()
+                        "timestamp", LocalDateTime.now().toString()
                 ));
     }
 

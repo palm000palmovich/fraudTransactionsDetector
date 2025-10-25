@@ -1,0 +1,22 @@
+global:
+  scrape_interval: 15s # Scrape metrics every 15 seconds
+  evaluation_interval: 15s # Evaluate rules every 15 seconds
+  external_labels:
+    monitor: 'financial-radar'
+
+# Scrape configurations
+scrape_configs:
+  # AdminApi application metrics
+  - job_name: 'admin-api'
+    metrics_path: '/actuator/prometheus'
+    scrape_interval: 10s
+    static_configs:
+      - targets: ['host.docker.internal:8081']
+        labels:
+          application: 'AdminApi'
+          environment: 'development'
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

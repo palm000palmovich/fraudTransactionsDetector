@@ -10,9 +10,10 @@ import org.springframework.kafka.config.TopicBuilder;
 public class KafkaTopicConfig {
     @Value("${app.kafka.topic.input-transactions}")
     private String inputTopic;
-
     @Value("${app.kafka.topic.input-transactions-dlq}")
     private String inputTransactionsDlq;
+    @Value("${app.kafka.topic.alerted-transactions}")
+    private String alertTransactionsTopic;
 
     @Bean
     public NewTopic newItemsTopic() {
@@ -31,6 +32,16 @@ public class KafkaTopicConfig {
                 .partitions(1)
                 .replicas(2)
                 .config("retention.ms", "604800000") //7 дней для хранения в DLQ
+                .config("cleanup.policy", "delete")
+                .build();
+    }
+
+    @Bean
+    public NewTopic alertTopic() {
+        return TopicBuilder.name(alertTransactionsTopic)
+                .partitions(1)
+                .replicas(2)
+                .config("retention.ms", "252000000") //1 час для хранения в alert-topic
                 .config("cleanup.policy", "delete")
                 .build();
     }

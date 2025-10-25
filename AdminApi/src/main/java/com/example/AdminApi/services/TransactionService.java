@@ -22,6 +22,8 @@ import java.util.concurrent.Semaphore;
 public class TransactionService {
     private final KafkaTemplate<String, InputTransactionDto> inputKafkaTemplate;
     private final KafkaTemplate<String, Object> dlqKafkaTemplate;
+    private final MetricsService metricsService;
+    private final TransactionLogService transactionLogService;
 
     @Value("${app.kafka.topic.input-transactions}")
     private String inputTopic;
@@ -47,9 +49,23 @@ public class TransactionService {
         boolean acquired = transactionSemaphore.tryAcquire();
         if (!acquired) {
             log.warn("Transaction limit exceeded. Sending to DLQ. Correlation ID: {}", correlationId);
+
+            // Log rate limit exceeded
+            transactionLogService.log(
+                    correlationId,
+                    "WARN",
+                    "KAFKA_PRODUCER",
+                    "Rate limit exceeded, transaction sent to DLQ",
+                    String.format("{\"maxConcurrent\":%d,\"dlqTopic\":\"%s\"}", maxConcurrent, inputTransactionsDlq)
+            );
+
             sendToDlq(transactionDto, "RATE_LIMIT_EXCEEDED");
             throw new RequestLimitException("Request limit exceeded.");
         }
+
+        // Track submitted transaction and update queue size
+        metricsService.incrementTransactionsSubmitted();
+        metricsService.setQueueSize(maxConcurrent - transactionSemaphore.availablePermits());
 
         CompletableFuture<SendResult<String, InputTransactionDto>> future =
                 inputKafkaTemplate.send(inputTopic, correlationId.toString(), transactionDto);
@@ -57,15 +73,38 @@ public class TransactionService {
         // Асинхронная обработка результата
         future.whenComplete((result, exception) -> {
             transactionSemaphore.release();
+            metricsService.setQueueSize(maxConcurrent - transactionSemaphore.availablePermits());
+
             if (exception == null) {
                 log.info("Successfully sent to Kafka. Topic: {}, Partition: {}, Offset: {}, correlationId: {}",
                         inputTopic,
                         result.getRecordMetadata().partition(),
                         result.getRecordMetadata().offset(),
                         correlationId);
+
+                // Log successful Kafka send
+                transactionLogService.log(
+                        correlationId,
+                        "INFO",
+                        "KAFKA_PRODUCER",
+                        "Transaction sent to Kafka topic",
+                        String.format("{\"topic\":\"%s\",\"partition\":%d,\"offset\":%d}",
+                                inputTopic,
+                                result.getRecordMetadata().partition(),
+                                result.getRecordMetadata().offset())
+                );
             } else {
                 log.error("Failed to send corrId {} to Kafka topic: {}. Error: {}",
                         correlationId, inputTopic, exception.getMessage(), exception);
+
+                // Log Kafka send failure
+                transactionLogService.log(
+                        correlationId,
+                        "ERROR",
+                        "KAFKA_PRODUCER",
+                        "Failed to send transaction to Kafka",
+                        String.format("{\"error\":\"%s\"}", exception.getMessage())
+                );
             }
         });
 

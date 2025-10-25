@@ -646,6 +646,27 @@ body {
     color: var(--blue-600);
 }
 
+.btn-group {
+    display: inline-flex;
+    gap: 0.25rem;
+}
+
+/* Badge styles for activity indicators */
+.badge-danger {
+    background-color: var(--red-100);
+    color: var(--red-700);
+}
+
+.badge-warning {
+    background-color: var(--yellow-100);
+    color: var(--yellow-600);
+}
+
+.badge-secondary {
+    background-color: var(--gray-100);
+    color: var(--gray-600);
+}
+
 /* ===============================================
    Typography
    =============================================== */
@@ -725,4 +746,201 @@ body {
     .filters-bar .form-input {
         width: 100%;
     }
+}
+
+/* ===========================
+   Transaction Logs Timeline Styles
+   =========================== */
+
+.timeline {
+    position: relative;
+    padding-left: 40px;
+    margin: 1rem 0;
+}
+
+.timeline-item {
+    position: relative;
+    padding-bottom: 2rem;
+}
+
+.timeline-item:last-child {
+    padding-bottom: 0;
+}
+
+.timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -28px;
+    top: 12px;
+    bottom: -12px;
+    width: 2px;
+    background: var(--gray-300);
+}
+
+.timeline-item:last-child::before {
+    display: none;
+}
+
+.timeline-dot {
+    position: absolute;
+    left: -35px;
+    top: 4px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 3px solid #fff;
+    background: var(--blue-500);
+    box-shadow: 0 0 0 2px var(--gray-300);
+}
+
+.timeline-item.info .timeline-dot {
+    background: var(--blue-500);
+    box-shadow: 0 0 0 2px var(--blue-200);
+}
+
+.timeline-item.warn .timeline-dot {
+    background: #ffc107;
+    box-shadow: 0 0 0 2px #fff4cc;
+}
+
+.timeline-item.error .timeline-dot {
+    background: var(--red-500);
+    box-shadow: 0 0 0 2px var(--red-200);
+}
+
+.timeline-content {
+    background: #fff;
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+    padding: 1rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.timeline-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.timeline-time {
+    font-size: 0.875rem;
+    color: var(--gray-600);
+    font-weight: 500;
+}
+
+.timeline-message {
+    color: var(--gray-800);
+    font-size: 0.95rem;
+    line-height: 1.5;
+    margin-bottom: 0.5rem;
+}
+
+.timeline-details {
+    margin-top: 0.75rem;
+}
+
+.timeline-details details {
+    background: var(--gray-50);
+    border: 1px solid var(--gray-200);
+    border-radius: 4px;
+    padding: 0.5rem;
+}
+
+.timeline-details summary {
+    cursor: pointer;
+    font-size: 0.875rem;
+    color: var(--blue-600);
+    font-weight: 500;
+    user-select: none;
+}
+
+.timeline-details summary:hover {
+    color: var(--blue-700);
+}
+
+.timeline-details pre {
+    margin-top: 0.75rem;
+    margin-bottom: 0;
+    padding: 0.75rem;
+    background: #fff;
+    border: 1px solid var(--gray-200);
+    border-radius: 4px;
+    font-size: 0.8rem;
+    overflow-x: auto;
+    color: var(--gray-700);
+}
+
+/* Badge Styles */
+.badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1;
+    text-align: center;
+    white-space: nowrap;
+    vertical-align: baseline;
+    border-radius: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.badge-info {
+    background: var(--blue-100);
+    color: var(--blue-700);
+}
+
+.badge-warn {
+    background: #fff4cc;
+    color: #856404;
+}
+
+.badge-error {
+    background: var(--red-100);
+    color: var(--red-700);
+}
+
+.badge-component {
+    background: var(--gray-200);
+    color: var(--gray-700);
+}
+
+/* Button Small */
+.btn-small {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    border: 1px solid var(--gray-300);
+    background: #fff;
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--blue-600);
+}
+
+.btn-small:hover {
+    background: var(--gray-50);
+    color: var(--blue-700);
+}
+
+/* Pagination Styles */
+.pagination {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem 0;
+}
+
+.pagination-info {
+    font-size: 0.875rem;
+    color: var(--gray-600);
+}
+
+/* Tab header subtitle */
+.subtitle {
+    font-size: 0.9rem;
+    color: var(--gray-600);
+    margin-top: 0.25rem;
+    margin-bottom: 0;
 }
