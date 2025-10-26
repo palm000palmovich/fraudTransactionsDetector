@@ -1392,3 +1392,107 @@ ${formattedParams}
 
     alert(details);
 }
+
+// ============================================
+// WEBSOCKET INTEGRATION FOR REAL-TIME ALERTS
+// ============================================
+
+let ws = null;
+let wsReconnectTimer = null;
+
+// Initialize WebSocket connection
+function initWebSocket() {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/api/ws/alerts`;
+
+    console.log('Connecting to WebSocket:', wsUrl);
+
+    ws = new WebSocket(wsUrl);
+
+    ws.onopen = function() {
+        console.log('WebSocket connected');
+        updateConnectionStatus(true);
+        clearReconnectTimer();
+    };
+
+    ws.onmessage = function(event) {
+        console.log('WebSocket message received:', event.data);
+        try {
+            const alert = JSON.parse(event.data);
+            handleRealtimeAlert(alert);
+        } catch (e) {
+            console.error('Failed to parse WebSocket message:', e);
+        }
+    };
+
+    ws.onerror = function(error) {
+        console.error('WebSocket error:', error);
+        updateConnectionStatus(false);
+    };
+
+    ws.onclose = function() {
+        console.log('WebSocket disconnected');
+        updateConnectionStatus(false);
+        scheduleReconnect();
+    };
+}
+
+// Handle real-time alert from WebSocket
+function handleRealtimeAlert(alert) {
+    console.log('Real-time alert received:', alert);
+
+    // Show browser notification
+    if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('🚨 Подозрительная транзакция', {
+            body: `${alert.ruleName}: ${alert.reason}`,
+            icon: '/favicon.ico'
+        });
+    }
+
+    // Reload data if on relevant tab
+    const activeTab = document.querySelector('.tab-content.active');
+    if (activeTab) {
+        const tabId = activeTab.id;
+        if (tabId === 'transactions') {
+            loadTransactions();
+        } else if (tabId === 'notifications') {
+            loadNotifications();
+        }
+    }
+}
+
+// Update connection status indicator
+function updateConnectionStatus(connected) {
+    const indicator = document.getElementById('wsStatus');
+    if (indicator) {
+        indicator.textContent = connected ? '🟢 Connected' : '🔴 Disconnected';
+        indicator.className = connected ? 'ws-status connected' : 'ws-status disconnected';
+    }
+}
+
+// Schedule WebSocket reconnection
+function scheduleReconnect() {
+    clearReconnectTimer();
+    wsReconnectTimer = setTimeout(function() {
+        console.log('Attempting to reconnect WebSocket...');
+        initWebSocket();
+    }, 5000); // 5 seconds
+}
+
+// Clear reconnect timer
+function clearReconnectTimer() {
+    if (wsReconnectTimer) {
+        clearTimeout(wsReconnectTimer);
+        wsReconnectTimer = null;
+    }
+}
+
+// Request notification permissions on load
+if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+}
+
+// Initialize WebSocket when authenticated
+if (typeof Auth !== 'undefined' && Auth.isAuthenticated && Auth.isAuthenticated()) {
+    initWebSocket();
+}
