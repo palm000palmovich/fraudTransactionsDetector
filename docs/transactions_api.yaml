@@ -1,0 +1,368 @@
+openapi: 3.0.3
+info:
+  title: Transactions API
+  version: 1.0.0
+  description: |
+    API для получения и создания транзакций.
+    Поддерживает операции GET (получение транзакций с фильтрацией) и POST (создание новой транзакции).
+
+servers:
+  - url: https://api.example.com
+
+paths:
+  /api/transactions:
+    get:
+      summary: Получить список транзакций по фильтрам
+      description: Возвращает список транзакций, отфильтрованных по указанным параметрам.
+      parameters:
+        - name: corrId
+          in: query
+          schema:
+            type: string
+          description: ID корреляции транзакции
+        - name: from
+          in: query
+          schema:
+            type: string
+            maxLength: 50
+          description: ID отправителя
+        - name: to
+          in: query
+          schema:
+            type: string
+            maxLength: 50
+          description: ID получателя
+        - name: after
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Начало временного диапазона (ISO 8601)
+        - name: before
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Конец временного диапазона (ISO 8601)
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum:
+              - OK
+              - ALERT
+          description: Статус транзакции
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Успешный ответ со списком транзакций
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transactions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        corrId:
+                          type: string
+                          example: "TXN-12345"
+                        from:
+                          type: string
+                          example: "USER-001"
+                        to:
+                          type: string
+                          example: "USER-002"
+                        amount:
+                          type: number
+                          example: 250.75
+                        status:
+                          type: string
+                          enum:
+                            - OK
+                            - ALERT
+                          example: "OK"
+                        timestamp:
+                          type: string
+                          format: date-time
+                          example: "2025-10-17T09:30:00Z"
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+        "500":
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      summary: Отправить новую транзакцию
+      description: Создаёт новую транзакцию и возвращает идентификатор корреляции. Обработка выполняется асинхронно через очередь.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Уникальный UUIDv4 для предотвращения повторной отправки (окно идемпотентности 15 минут)
+          schema:
+            type: string
+            format: uuid
+            example: "7e8b21f2-1a7e-4c4a-9b13-50b4a6bfa314"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - from
+                - to
+                - amount
+                - timestamp
+              properties:
+                from:
+                  type: string
+                  pattern: "^[A-Z0-9]{1,50}$"
+                  example: "ACC877572"
+                  description: Уникальный идентификатор отправителя транзакции (alfanumeric, max length 50)
+                to:
+                  type: string
+                  pattern: "^[A-Z0-9]{1,50}$"
+                  example: "ACC388389"
+                  description: Уникальный идентификатор получателя транзакции (alfanumeric, max length 50)
+                amount:
+                  type: number
+                  minimum: 0
+                  exclusiveMinimum: true
+                  maximum: 1000000000.00
+                  example: 500.00
+                  description: Сумма транзакции (должна быть > 0)
+                currency:
+                  type: string
+                  pattern: "^[A-Z]{3}$"
+                  example: "USD"
+                  description: Код валюты в стандарте ISO-4217 (опционально)
+                channel:
+                  type: string
+                  maxLength: 50
+                  example: "card"
+                  description: Канал, через который инициирована транзакция (опционально)
+                geo:
+                  type: string
+                  maxLength: 100
+                  example: "Tokyo"
+                  description: Географическое местоположение пользователя (опционально)
+                description:
+                  type: string
+                  maxLength: 255
+                  example: "withdrawal"
+                  description: Описание назначения платежа (опционально)
+                timestamp:
+                  type: string
+                  format: date-time
+                  description: |
+                    Время создания транзакции в формате ISO 8601.
+                    Должно быть в пределах ±2 суток от текущего времени.
+                  example: "2025-10-17T09:45:00Z"
+      responses:
+        "202":
+          description: Транзакция принята в обработку
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  corrId:
+                    type: string
+                    example: "TXN-67890"
+                    description: Идентификатор корреляции для отслеживания статуса транзакции
+              example:
+                corrId: "TXN-67890"
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+        "503":
+          $ref: '#/components/responses/ServiceUnavailable'
+        "500":
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  headers:
+    X-Correlation-Id:
+      description: Корреляционный идентификатор, возвращаемый сервисом (совпадает с переданным, либо сгенерирован заново).
+      schema:
+        type: string
+    Retry-After:
+      description: Время ожидания перед повторной попыткой (в секундах)
+      schema:
+        type: integer
+        example: 60
+    X-RateLimit-Limit:
+      description: Максимум запросов в текущем окне
+      schema:
+        type: integer
+        example: 120
+    X-RateLimit-Remaining:
+      description: Оставшееся количество запросов в окне
+      schema:
+        type: integer
+        example: 0
+    X-RateLimit-Reset:
+      description: UNIX-время, когда лимит будет сброшен
+      schema:
+        type: integer
+        example: 1739846400
+
+  schemas:
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          example: INTERNAL_ERROR
+        message:
+          type: string
+          example: "Unexpected error"
+        correlationId:
+          type: string
+          description: Для обращения в поддержку укажите этот ID
+    FieldError:
+      type: object
+      required:
+        - field
+        - reason
+      properties:
+        field:
+          type: string
+          example: "after"
+        reason:
+          type: string
+          example: "must be a valid ISO8601 date"
+    ValidationError:
+      allOf:
+        - $ref: '#/components/schemas/Error'
+        - type: object
+          properties:
+            code:
+              type: string
+              example: INVALID_REQUEST
+            details:
+              type: array
+              description: Перечень ошибок по полям
+              items:
+                $ref: '#/components/schemas/FieldError'
+
+  responses:
+    BadRequest:
+      description: Неверные данные запроса. Содержит детализацию по полям.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+          examples:
+            invalidQuery:
+              value:
+                code: INVALID_REQUEST
+                message: "One or more parameters are invalid"
+                correlationId: "c0a8017e-5d3a-4a44-9f1e-0c2f0a6a9b1e"
+                details:
+                  - field: "after"
+                    reason: "must be a valid ISO8601 date"
+            invalidBody:
+              value:
+                code: INVALID_REQUEST
+                message: "Field 'amount' must be positive"
+                correlationId: "c0a8017e-5d3a-4a44-9f1e-0c2f0a6a9b1e"
+                details:
+                  - field: "amount"
+                    reason: "must be greater than 0"
+            invalidTimestamp:
+              value:
+                code: INVALID_REQUEST
+                message: "Timestamp is out of acceptable range"
+                correlationId: "c0a8017e-5d3a-4a44-9f1e-0c2f0a6a9b1e"
+                details:
+                  - field: "timestamp"
+                    reason: "must be within ±2 days from current time"
+    Unauthorized:
+      description: Отсутствует или неверный токен авторизации
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: UNAUTHORIZED
+            message: "Missing or invalid token"
+    Forbidden:
+      description: Доступ запрещён
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: FORBIDDEN
+            message: "User does not have permission to perform this action"
+    TooManyRequests:
+      description: Слишком много запросов (перегрузка/превышение лимитов)
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/Retry-After'
+        X-RateLimit-Limit:
+          $ref: '#/components/headers/X-RateLimit-Limit'
+        X-RateLimit-Remaining:
+          $ref: '#/components/headers/X-RateLimit-Remaining'
+        X-RateLimit-Reset:
+          $ref: '#/components/headers/X-RateLimit-Reset'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: RATE_LIMIT_EXCEEDED
+            message: "Too many requests. Please retry later."
+    ServiceUnavailable:
+      description: Сервис недоступен
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/Retry-After'
+        X-Correlation-Id:
+          $ref: '#/components/headers/X-Correlation-Id'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: SERVICE_UNAVAILABLE
+            message: "Service temporarily unavailable. Queue is full. Please retry later."
+    InternalServerError:
+      description: Внутренняя ошибка сервера
+      headers:
+        X-Correlation-Id:
+          $ref: '#/components/headers/X-Correlation-Id'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: INTERNAL_ERROR
+            message: "Unexpected error occurred"

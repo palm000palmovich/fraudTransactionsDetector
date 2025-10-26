@@ -1,0 +1,76 @@
+@startuml
+title Финансовый радар — Архитектура системы обнаружения подозрительных операций
+
+' === Настройки стиля ===
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam backgroundColor #FFFFFF
+skinparam component {
+  BackgroundColor<<service>> #f9f9f9
+  BackgroundColor<<db>>      #eef9ff
+  BackgroundColor<<ui>>      #fff6ea
+  BackgroundColor<<queue>>   #fffbd6
+  BackgroundColor<<notify>>  #eef9f0
+}
+hide stereotype
+left to right direction
+
+' === Акторы ===
+actor "Источники транзакций" as Source
+actor "Администратор" as Admin
+actor "Оператор безопасности" as Operator
+
+' === Группы и основные компоненты ===
+package "Вход (Ingestion)" {
+  component "API Gateway" as APIGW <<service>>
+}
+
+package "Обработка (Processing & Detection)" {
+  component "Message Queue" as Queue <<queue>>
+  component "Worker Pool" as Workers <<service>>
+  component "Data Processing Service" as DataService <<service>>
+  component "Rule Engine" as RuleEngine <<service>>
+}
+
+node "Хранилище (Database Cluster)" as DB <<db>> {
+  [Transactions]
+  [Alerts]
+  [Rules]
+  [Metrics]
+}
+
+package "Управление & Мониторинг" {
+  component "Admin UI" as AdminUI <<ui>>
+  component "Monitoring & Analytics" as Monitor <<service>>
+}
+
+package "Уведомления (Notifications)" {
+  component "Notification Service" as Notify <<notify>>
+}
+
+' === Основные взаимодействия (без деталей) ===
+Source --> APIGW : POST /transactions (JSON)
+APIGW --> Queue : enqueue
+Workers --> Queue : poll
+Queue --> Workers : msg
+Workers --> DataService : process(tx)
+DataService --> RuleEngine : check rules
+RuleEngine --> [Rules] : read
+RuleEngine --> DataService : OK / Suspicious
+DataService --> [Transactions] : write status
+DataService --> [Alerts] : write alert (при Suspicious)
+DataService --> Monitor : counters/latency
+Monitor --> [Metrics] : aggregate
+
+' Уведомления
+DataService --> Notify : alert event
+Notify --> Operator : уведомление
+
+' Управление и просмотр
+Admin --> AdminUI : управление правилами
+Operator --> AdminUI : просмотр инцидентов
+AdminUI --> [Rules] : CRUD
+AdminUI --> [Alerts] : список
+AdminUI --> Monitor : метрики/статистика
+
+@enduml

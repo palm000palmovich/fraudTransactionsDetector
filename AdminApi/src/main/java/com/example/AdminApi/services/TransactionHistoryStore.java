@@ -334,4 +334,72 @@ public class TransactionHistoryStore {
     public void logStats() {
         log.info(getStats());
     }
+
+    /**
+     * Получить timestamp последней транзакции (для time_since_last).
+     *
+     * Используется для расчета time_since_last_transaction в ML features.
+     *
+     * @param sourceId Ключ (sourceId)
+     * @return Timestamp последней транзакции или null если нет истории
+     */
+    public LocalDateTime getLastTransactionTime(String sourceId) {
+        List<TransactionRecord> records = getInWindow(sourceId, Duration.ofHours(24));
+        if (records.isEmpty()) {
+            return null;
+        }
+        // Первая запись - самая свежая (addFirst в deque)
+        return records.get(0).getTimestamp();
+    }
+
+    /**
+     * Получить среднюю сумму транзакций (для spending_deviation).
+     *
+     * Используется для расчета spending_deviation_score в ML features.
+     *
+     * @param sourceId Ключ (sourceId)
+     * @param window Размер окна (например, Duration.ofDays(30))
+     * @return Средняя сумма или BigDecimal.ZERO если нет транзакций
+     */
+    public BigDecimal getAvgAmount(String sourceId, Duration window) {
+        List<TransactionRecord> records = getInWindow(sourceId, window);
+        if (records.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+
+        BigDecimal sum = records.stream()
+                .map(TransactionRecord::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        return sum.divide(BigDecimal.valueOf(records.size()), 2, java.math.RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Получить стандартное отклонение суммы транзакций (для spending_deviation_score).
+     *
+     * Вычисляет стандартное отклонение (standard deviation) для обнаружения
+     * аномальных транзакций.
+     *
+     * @param sourceId Ключ (sourceId)
+     * @param window Размер окна (например, Duration.ofDays(30))
+     * @return Стандартное отклонение или 0.0 если недостаточно данных
+     */
+    public double getStdAmount(String sourceId, Duration window) {
+        List<TransactionRecord> records = getInWindow(sourceId, window);
+        if (records.size() < 2) {
+            return 0.0; // Нужно минимум 2 записи для расчета std
+        }
+
+        double avg = getAvgAmount(sourceId, window).doubleValue();
+
+        double variance = records.stream()
+                .mapToDouble(r -> {
+                    double diff = r.getAmount().doubleValue() - avg;
+                    return diff * diff;
+                })
+                .average()
+                .orElse(0.0);
+
+        return Math.sqrt(variance);
+    }
 }

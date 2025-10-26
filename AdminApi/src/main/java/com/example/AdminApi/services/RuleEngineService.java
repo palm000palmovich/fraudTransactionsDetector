@@ -17,6 +17,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Rule Engine Service - Core fraud detection logic.
@@ -130,12 +131,26 @@ public class RuleEngineService {
                     log.info("Rule TRIGGERED: id={}, name='{}', type={}, reason={}",
                              rule.getId(), rule.getName(), rule.getRuleType(), reason);
 
-                    return RuleEngineResult.match(
-                            rule.getId(),
-                            rule.getName(),
-                            rule.getRuleType().name(),
-                            reason
-                    );
+                    // Extract metadata from context (for ML rules, contains scores/thresholds)
+                    Map<String, Object> metadata = context.getMetadata();
+
+                    // Return result with metadata if present, otherwise without
+                    if (metadata != null && !metadata.isEmpty()) {
+                        return RuleEngineResult.matchWithMetadata(
+                                rule.getId(),
+                                rule.getName(),
+                                rule.getRuleType().name(),
+                                reason,
+                                metadata
+                        );
+                    } else {
+                        return RuleEngineResult.match(
+                                rule.getId(),
+                                rule.getName(),
+                                rule.getRuleType().name(),
+                                reason
+                        );
+                    }
                 }
 
                 log.debug("Rule not triggered: id={}, name='{}'", rule.getId(), rule.getName());

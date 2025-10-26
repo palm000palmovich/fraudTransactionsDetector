@@ -1,0 +1,31 @@
+# IDE
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv
+*.egg-info/
+dist/
+build/
+
+# ML Models and Data
+*.cbm
+*.pkl
+*.csv
+catboost_info/
+
+# Temporary files
+*.log
+*.tmp
+nul
+cookies.txt
+
+# Documentation drafts (keep only final docs)
+ml.md
+ml_integration_plan.md

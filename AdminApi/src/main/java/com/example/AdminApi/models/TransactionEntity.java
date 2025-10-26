@@ -4,9 +4,12 @@ import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.UUID;
 
 @Entity
@@ -63,6 +66,11 @@ public class TransactionEntity {
 
     @Column(name = "trigger_reason", columnDefinition = "TEXT")
     private String triggerReason;
+
+    // Rule evaluation metadata (e.g., ML scores, thresholds)
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "rule_metadata", columnDefinition = "jsonb")
+    private Map<String, Object> ruleMetadata;
 
     // Metadata
     @Column(name = "created_at", updatable = false)

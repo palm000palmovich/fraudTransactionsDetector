@@ -100,6 +100,7 @@ public class TransactionProcessingService {
                     savedTxn.setTriggeredRuleId(ruleResult.getRuleId());
                     savedTxn.setTriggeredRuleName(ruleResult.getRuleName());
                     savedTxn.setTriggerReason(ruleResult.getReason());
+                    savedTxn.setRuleMetadata(ruleResult.getMetadata());
 
                     log.warn("Transaction ALERTED: correlationId={}, rule='{}', reason={}",
                              dto.getCorrelationId(), ruleResult.getRuleName(), ruleResult.getReason());

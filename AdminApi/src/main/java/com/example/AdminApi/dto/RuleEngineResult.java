@@ -5,6 +5,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.Map;
+
 /**
  * Result of rule engine evaluation.
  *
@@ -48,6 +50,23 @@ public class RuleEngineResult {
     private String reason;
 
     /**
+     * Rule evaluation metadata (e.g., ML scores, thresholds, model versions).
+     *
+     * For ML rules, contains:
+     * - ml_score (Float): fraud score from ML model (0.0 - 1.0)
+     * - ml_threshold (Double): threshold used for decision
+     * - ml_model_version (String): model version identifier
+     *
+     * Example:
+     * {
+     *   "ml_score": 0.9234,
+     *   "ml_threshold": 0.5,
+     *   "ml_model_version": "production-15f"
+     * }
+     */
+    private Map<String, Object> metadata;
+
+    /**
      * Creates a result for when no rules were triggered.
      */
     public static RuleEngineResult noMatch() {
@@ -66,6 +85,27 @@ public class RuleEngineResult {
                 .ruleName(ruleName)
                 .ruleType(ruleType)
                 .reason(reason)
+                .build();
+    }
+
+    /**
+     * Creates a result for when a rule was triggered, with metadata.
+     *
+     * @param ruleId Rule ID
+     * @param ruleName Rule name
+     * @param ruleType Rule type
+     * @param reason Human-readable reason
+     * @param metadata Evaluation metadata (e.g., ML scores)
+     * @return RuleEngineResult with metadata
+     */
+    public static RuleEngineResult matchWithMetadata(Long ruleId, String ruleName, String ruleType, String reason, Map<String, Object> metadata) {
+        return RuleEngineResult.builder()
+                .triggered(true)
+                .ruleId(ruleId)
+                .ruleName(ruleName)
+                .ruleType(ruleType)
+                .reason(reason)
+                .metadata(metadata)
                 .build();
     }
 }

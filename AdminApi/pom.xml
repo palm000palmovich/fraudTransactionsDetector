@@ -123,6 +123,13 @@
 			<groupId>io.micrometer</groupId>
 			<artifactId>micrometer-registry-prometheus</artifactId>
 		</dependency>
+
+		<!-- ONNX Runtime for ML Model Inference -->
+		<dependency>
+			<groupId>com.microsoft.onnxruntime</groupId>
+			<artifactId>onnxruntime</artifactId>
+			<version>1.19.2</version>
+		</dependency>
 	</dependencies>
 
 	<build>

@@ -81,7 +81,6 @@ document.addEventListener('DOMContentLoaded', function() {
     loadStats();
     loadAuditLog();
     loadNotifications();
-    loadCharts();
 
     // Event listeners
     document.getElementById('logoutBtn').addEventListener('click', handleLogout);
@@ -320,6 +319,7 @@ function showTransactionDetails(txId) {
             <div style="font-size: 0.75rem; color: var(--red-600); margin-top: 0.5rem;">
                 ${tx.triggerReason || 'Нет описания'}
             </div>
+            ${renderMLScoreDetails(tx.ruleMetadata)}
         </div>
         ` : '<p style="font-size: 0.75rem; color: var(--green-600); padding-top: 0.75rem; border-top: 1px solid var(--gray-200);">✓ Нет срабатываний</p>'}
     `;
@@ -341,6 +341,39 @@ function formatTimestamp(timestamp) {
         return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')} ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`;
     }
     return timestamp;
+}
+
+// Render ML Score Details (for ML rules)
+function renderMLScoreDetails(ruleMetadata) {
+    if (!ruleMetadata || !ruleMetadata.ml_score) {
+        return '';
+    }
+
+    const score = ruleMetadata.ml_score;
+    const threshold = ruleMetadata.ml_threshold || 0.5;
+    const modelVersion = ruleMetadata.ml_model_version || 'unknown';
+    const scorePercent = (score * 100).toFixed(1);
+
+    return `
+        <div class="ml-score-section" style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--gray-200);">
+            <div class="text-sm text-gray" style="font-weight: 600; margin-bottom: 0.5rem;">ML Fraud Score:</div>
+
+            <div style="margin-bottom: 0.75rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                    <span class="text-sm" style="font-weight: 600;">${scorePercent}%</span>
+                    <span class="text-xs text-gray">Threshold: ${(threshold * 100).toFixed(0)}%</span>
+                </div>
+                <div class="ml-score-meter" style="width: 100%; height: 8px; background-color: var(--gray-200); border-radius: 4px; overflow: hidden;">
+                    <div style="width: ${scorePercent}%; height: 100%; background-color: var(--red-600); transition: width 0.3s ease;"></div>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <span class="text-xs text-gray">Model:</span>
+                <span class="badge" style="font-size: 0.65rem; padding: 0.125rem 0.375rem; background-color: var(--blue-100); color: var(--blue-700);">${modelVersion}</span>
+            </div>
+        </div>
+    `;
 }
 
 // Close details
@@ -515,6 +548,36 @@ function parseDate(dateValue) {
 }
 
 // Load rules with metrics
+// Render rule parameters display (for ML rules, show threshold and fallback)
+function renderRuleParams(rule) {
+    if (rule.ruleType !== 'ML') {
+        return '';
+    }
+
+    try {
+        const params = JSON.parse(rule.paramsJson);
+        const parts = [];
+
+        if (params.threshold !== undefined) {
+            const thresholdPercent = (params.threshold * 100).toFixed(0);
+            parts.push(`<span style="font-size: 0.7rem; color: var(--gray-600);">threshold=${thresholdPercent}%</span>`);
+        }
+
+        if (params.fallbackAction) {
+            const color = params.fallbackAction === 'ALERTED' ? 'var(--red-600)' : 'var(--green-600)';
+            parts.push(`<span style="font-size: 0.7rem; color: ${color};">fallback=${params.fallbackAction}</span>`);
+        }
+
+        if (parts.length > 0) {
+            return '<br/><div style="margin-top: 0.25rem;">' + parts.join(' | ') + '</div>';
+        }
+
+        return '';
+    } catch (e) {
+        return '';
+    }
+}
+
 async function loadRules() {
     try {
         // Load rules and metrics in parallel
@@ -620,9 +683,12 @@ async function loadRules() {
                      <button class="btn-icon btn-delete" onclick="deleteRule(${rule.id})" title="Удалить">🗑️</button>
                    </div>`;
 
+            // Render rule parameters (for ML rules, show threshold and fallbackAction)
+            const paramsDisplay = renderRuleParams(rule);
+
             row.innerHTML = `
                 <td><strong>${rule.name}</strong></td>
-                <td><span class="badge badge-info">${rule.ruleType}</span></td>
+                <td><span class="badge badge-info">${rule.ruleType}</span>${paramsDisplay}</td>
                 <td style="text-align: center;"><strong>${rule.priority}</strong></td>
                 <td>${statusCell}</td>
                 <td style="text-align: center;">${activityBadge}</td>
@@ -775,10 +841,17 @@ const RULE_EXAMPLES = {
         }
     },
     ML: {
-        'ML Model Example': {
-            modelName: "fraud_detector_v1",
-            threshold: 0.75,
-            features: ["amount", "hour", "geo", "channel"]
+        'Production ML Rule (threshold=0.8, alert on error)': {
+            threshold: 0.8,
+            fallbackAction: "ALERTED"
+        },
+        'Lenient ML Rule (threshold=0.5, pass on error)': {
+            threshold: 0.5,
+            fallbackAction: "PASS"
+        },
+        'Strict ML Rule (threshold=0.9, pass on error)': {
+            threshold: 0.9,
+            fallbackAction: "PASS"
         }
     }
 };
@@ -841,6 +914,7 @@ function formatRuleParams() {
 function validateRuleParams() {
     const textarea = document.getElementById('ruleParams');
     const validationDiv = document.getElementById('paramsValidation');
+    const ruleType = document.getElementById('ruleType').value;
     const value = textarea.value.trim();
 
     if (!value) {
@@ -851,6 +925,33 @@ function validateRuleParams() {
 
     try {
         const parsed = JSON.parse(value);
+
+        // ML-specific validation
+        if (ruleType === 'ML') {
+            const errors = [];
+
+            // Validate threshold (must be 0-1)
+            if (parsed.threshold !== undefined) {
+                if (typeof parsed.threshold !== 'number') {
+                    errors.push('threshold должен быть числом');
+                } else if (parsed.threshold < 0 || parsed.threshold > 1) {
+                    errors.push('threshold должен быть в диапазоне 0.0-1.0');
+                }
+            }
+
+            // Validate fallbackAction (must be PASS or ALERTED)
+            if (parsed.fallbackAction !== undefined) {
+                if (parsed.fallbackAction !== 'PASS' && parsed.fallbackAction !== 'ALERTED') {
+                    errors.push('fallbackAction должен быть "PASS" или "ALERTED"');
+                }
+            }
+
+            if (errors.length > 0) {
+                validationDiv.innerHTML = '<span style="color: var(--orange-600);">⚠ ' + errors.join('; ') + '</span>';
+                return false;
+            }
+        }
+
         validationDiv.innerHTML = '<span style="color: var(--green-600);">✓ JSON корректен</span>';
         return true;
     } catch (e) {
@@ -1222,110 +1323,12 @@ function toggleChannel(channelId) {
     }
 }
 
-// Load charts
-function loadCharts() {
-    const metricsData = [
-        { date: 'Пн', processed: 240, alerted: 85, reviewed: 120 },
-        { date: 'Вт', processed: 320, alerted: 92, reviewed: 180 },
-        { date: 'Ср', processed: 280, alerted: 78, reviewed: 150 },
-        { date: 'Чт', processed: 410, alerted: 110, reviewed: 240 },
-        { date: 'Пт', processed: 520, alerted: 165, reviewed: 380 },
-    ];
-
-    // Line chart
-    const lineCtx = document.getElementById('lineChart');
-    if (lineCtx) {
-        new Chart(lineCtx, {
-            type: 'line',
-            data: {
-                labels: metricsData.map(d => d.date),
-                datasets: [
-                    {
-                        label: 'Обработано',
-                        data: metricsData.map(d => d.processed),
-                        borderColor: '#3b82f6',
-                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                        tension: 0.3,
-                    },
-                    {
-                        label: 'Помечено',
-                        data: metricsData.map(d => d.alerted),
-                        borderColor: '#ef4444',
-                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                        tension: 0.3,
-                    },
-                    {
-                        label: 'Проверено',
-                        data: metricsData.map(d => d.reviewed),
-                        borderColor: '#10b981',
-                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                        tension: 0.3,
-                    },
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: true,
-                plugins: {
-                    legend: {
-                        position: 'bottom',
-                    }
-                }
-            }
-        });
-    }
-
-    // Bar chart
-    const barCtx = document.getElementById('barChart');
-    if (barCtx) {
-        new Chart(barCtx, {
-            type: 'bar',
-            data: {
-                labels: metricsData.map(d => d.date),
-                datasets: [
-                    {
-                        label: 'Обработано',
-                        data: metricsData.map(d => d.processed),
-                        backgroundColor: '#3b82f6',
-                    },
-                    {
-                        label: 'Помечено',
-                        data: metricsData.map(d => d.alerted),
-                        backgroundColor: '#ef4444',
-                    },
-                    {
-                        label: 'Проверено',
-                        data: metricsData.map(d => d.reviewed),
-                        backgroundColor: '#10b981',
-                    },
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: true,
-                plugins: {
-                    legend: {
-                        position: 'bottom',
-                    }
-                }
-            }
-        });
-    }
-}
 
 // Export CSV
 function exportCSV(type) {
     let csv, filename;
 
-    if (type === 'metrics') {
-        csv = 'Дата,Обработано,Помечено,Проверено\n';
-        csv += 'Пн,240,85,120\n';
-        csv += 'Вт,320,92,180\n';
-        csv += 'Ср,280,78,150\n';
-        csv += 'Чт,410,110,240\n';
-        csv += 'Пт,520,165,380\n';
-        filename = 'metrics.csv';
-    } else if (type === 'transactions') {
+    if (type === 'transactions') {
         csv = 'ID,Валюта,Сумма,От,Кому,Статус,Время,Correlation ID\n';
         csv += transactions.map(t =>
             `${t.id},${t.currency || 'USD'},${t.amount},${t.sourceId},${t.destinationId},${t.status},${formatTimestamp(t.timestamp)},${t.correlationId}`

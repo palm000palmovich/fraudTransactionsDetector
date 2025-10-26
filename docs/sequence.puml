@@ -1,0 +1,110 @@
+@startuml
+title Финансовый радар — Поток обработки подозрительной транзакции
+
+actor "Источник транзакций" as Source
+participant "API Gateway" as APIGW
+participant "Validation & Sanitization" as Validator
+collections "Processing Queue" as Queue
+collections "Dead Letter Queue" as DLQ
+participant "Worker" as Worker
+participant "Data Processing Service" as DataService
+participant "Rule Engine" as RuleEngine
+participant "Notification Service" as Notify
+participant "Email/Webhook/Telegram" as Channels
+database "DB (Rules / Transactions / Alerts)" as DB
+database "Audit Log" as Audit
+participant "Monitoring Service" as Monitor
+participant "Admin UI" as AdminUI
+actor "Оператор безопасности" as Operator
+participant "Observability (/metrics + logs)" as Obs
+
+== Приём и проверка транзакции ==
+
+Source -> APIGW : POST /transactions {amount, sender, receiver, ...}\nHeaders: Idempotency-Key
+APIGW -> Obs : log(request_received, correlationId)
+APIGW -> Validator : validate & sanitize(payload)
+
+alt Валидация не прошла
+  Validator --> APIGW : errors(fields...)
+  APIGW -> Obs : log(validation_failed, correlationId)
+  APIGW --> Source : 400 Bad Request {error: validation_failed}
+else Перегрузка
+  APIGW -> Queue : try enqueue?
+  alt Очередь переполнена
+    APIGW -> Obs : metric(queue_full)
+    APIGW --> Source : 429 Too Many Requests {retry-after}
+  else Принято в очередь
+    APIGW -> Queue : enqueue(tx, correlationId)
+    APIGW -> Obs : metric(enqueued)
+    APIGW --> Source : 202 Accepted {correlationId}
+  end
+end
+
+== Асинхронная обработка очереди ==
+
+Worker -> Queue : poll()
+Queue --> Worker : tx, correlationId
+Worker -> Obs : log(worker_start, correlationId)
+
+Worker -> DataService : process(tx, correlationId)
+DataService -> RuleEngine : evaluate(tx, correlationId)
+
+opt (Rule cache / контекст)
+  RuleEngine -> DB : load active rules / context (if stale)
+  DB --> RuleEngine : rules / aggregates
+end
+
+RuleEngine -> RuleEngine : threshold / pattern / composite / ML
+RuleEngine --> DataService : result = OK | SUSPICIOUS\nreasons[], ruleIds[], score?
+
+== Реакция на результат ==
+
+alt Транзакция подозрительная
+  DataService -> DB : INSERT alerts(..., correlationId, reasons)
+  DataService -> DB : INSERT transactions(status='suspicious', ...)
+  DataService -> Audit : append "ALERT created", correlationId
+  DataService -> Notify : sendAlertEvent(correlationId, payload)
+  Notify -> Channels : deliver(alert)
+  alt Доставка успешна
+    Channels --> Notify : 200 OK
+    Notify -> DB : UPDATE notifications SET status='SENT'
+  else Ошибка доставки
+    Channels --> Notify : 5xx/timeout
+    Notify -> Obs : log(notification_retry)
+    loop ретраи с экспонентой (max N)
+      Notify -> Channels : deliver(alert)
+    end
+    alt Не удалось после N попыток
+      Notify -> DLQ : enqueue(notification_event)
+      Notify -> DB : UPDATE notifications SET status='FAILED'
+    end
+  end
+  Notify -> Monitor : update dashboard metrics
+  Monitor -> AdminUI : push/update widgets
+  AdminUI -> Operator : уведомление о подозрительной операции
+else Транзакция нормальная
+  DataService -> DB : INSERT transactions(status='ok', ...)
+  DataService -> Monitor : sendEvent(correlationId)
+end
+
+Worker -> Obs : log(worker_finish, durationMs, correlationId)
+
+== Идемпотентность ==
+group Повторный POST с тем же Idempotency-Key
+  Source -> APIGW : POST /transactions (same key)
+  APIGW -> DB : lookup by Idempotency-Key
+  DB --> APIGW : found prior result
+  APIGW --> Source : 200/202 with previous correlationId/result
+end
+
+== Просмотр и управление в админке ==
+Operator -> AdminUI : открыть панель подозрительных операций
+AdminUI -> DB : SELECT * FROM alerts ORDER BY created_at DESC
+DB --> AdminUI : список последних срабатываний
+
+== Горячее обновление правил ==
+AdminUI -> DB : UPDATE rules SET params/priority/enabled...
+AdminUI -> RuleEngine : rules_updated (signal/poll)
+RuleEngine -> Obs : log(rules_hot_reloaded)
+
+@enduml

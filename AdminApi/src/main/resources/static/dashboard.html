@@ -351,84 +351,22 @@
         <div id="metrics" class="tab-content">
             <div class="tab-header">
                 <h2>Метрики и статистика</h2>
-                <button class="btn btn-success" onclick="exportCSV('metrics')">
-                    <span class="icon">📥</span> CSV
-                </button>
-            </div>
-
-            <!-- Stats Cards -->
-            <div class="stats-grid">
-                <div class="stat-card stat-blue">
-                    <div class="stat-label">Обработано</div>
-                    <div class="stat-value">2440</div>
-                </div>
-                <div class="stat-card stat-red">
-                    <div class="stat-label">Помечено</div>
-                    <div class="stat-value">750</div>
-                </div>
-                <div class="stat-card stat-green">
-                    <div class="stat-label">Проверено</div>
-                    <div class="stat-value">1440</div>
+                <div style="display: flex; gap: 0.5rem;">
+                    <a href="http://localhost:3000/d/financial-radar-main" target="_blank" class="btn btn-secondary">
+                        <span class="icon">🔗</span> Открыть в Grafana
+                    </a>
                 </div>
             </div>
 
-            <!-- Charts -->
-            <div class="card">
-                <div class="card-header">
-                    <h3>График активности за неделю</h3>
-                </div>
-                <div class="card-body">
-                    <canvas id="lineChart"></canvas>
-                </div>
-            </div>
-
-            <div class="card">
-                <div class="card-header">
-                    <h3>Столбчатая диаграмма</h3>
-                </div>
-                <div class="card-body">
-                    <canvas id="barChart"></canvas>
-                </div>
-            </div>
-
-            <!-- Metrics Details -->
-            <div class="metrics-grid">
-                <div class="card">
-                    <div class="card-header">
-                        <h3>Ключевые метрики</h3>
-                    </div>
-                    <div class="card-body">
-                        <div class="metric-row">
-                            <span>Латентность (p50)</span>
-                            <span class="metric-value">45ms</span>
-                        </div>
-                        <div class="metric-row">
-                            <span>Латентность (p95)</span>
-                            <span class="metric-value">180ms</span>
-                        </div>
-                        <div class="metric-row">
-                            <span>Throughput</span>
-                            <span class="metric-value">1,240 tx/мин</span>
-                        </div>
-                        <div class="metric-row">
-                            <span>Размер очереди</span>
-                            <span class="metric-value">23 событий</span>
-                        </div>
-                        <div class="metric-row">
-                            <span>Ошибки за день</span>
-                            <span class="metric-value error">12</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="card">
-                    <div class="card-header">
-                        <h3>Производительность правил</h3>
-                    </div>
-                    <div class="card-body" id="rulePerformance">
-                        <!-- Populated by JavaScript -->
-                    </div>
-                </div>
+            <!-- Grafana Dashboard Embedded -->
+            <div class="card" style="padding: 0; overflow: hidden;">
+                <iframe
+                    src="http://localhost:3000/d/financial-radar-main?orgId=1&refresh=10s&theme=light&kiosk=tv"
+                    width="100%"
+                    height="1800px"
+                    style="border: none; display: block;"
+                    title="Grafana Dashboard">
+                </iframe>
             </div>
         </div>
 
@@ -632,7 +570,6 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="js/auth.js"></script>
     <script src="js/transaction-logs.js"></script>
     <script src="js/dashboard.js"></script>

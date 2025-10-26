@@ -134,6 +134,7 @@ public class AdminTransactionService {
                 .triggeredRuleId(entity.getTriggeredRuleId())
                 .triggeredRuleName(entity.getTriggeredRuleName())
                 .triggerReason(entity.getTriggerReason())
+                .ruleMetadata(entity.getRuleMetadata())
                 .processedAt(entity.getProcessedAt())
                 .createdAt(entity.getCreatedAt())
                 .build();
