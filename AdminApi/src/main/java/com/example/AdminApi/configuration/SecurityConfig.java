@@ -53,6 +53,9 @@ public class SecurityConfig {
                 .requestMatchers("/actuator/**").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/transactions").permitAll()
 
+                // WebSocket endpoints - permit all (we'll handle auth differently)
+                .requestMatchers("/api/ws/**", "/ws/**", "/topic/**", "/app/**").permitAll()
+
                 // Static files - allow access to login page and assets
                 .requestMatchers(
                     "/",
@@ -89,23 +92,32 @@ public class SecurityConfig {
 
             // HTTP Basic Authentication without browser popup
             // Custom entry point that returns 401 without WWW-Authenticate header
-            .httpBasic(basic -> basic
-                .authenticationEntryPoint((request, response, authException) -> {
-                    log.warn("🔐 [AUTH STEP 1] HTTP Basic Auth initiated - Request to: {} from IP: {}",
-                        request.getRequestURI(), request.getRemoteAddr());
-                    log.info("❌ [AUTH FAILED] Unauthorized access attempt: {}", authException.getMessage());
+                .httpBasic(basic -> basic
+                        .authenticationEntryPoint((request, response, authException) -> {
+                            // Skip logging for WebSocket upgrade requests
+                            if (!isWebSocketRequest(request)) {
+                                log.warn("🔐 [AUTH STEP 1] HTTP Basic Auth initiated - Request to: {} from IP: {}",
+                                        request.getRequestURI(), request.getRemoteAddr());
+                                log.info("❌ [AUTH FAILED] Unauthorized access attempt: {}", authException.getMessage());
+                            }
 
-                    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                    response.setContentType("application/json");
-                    response.getWriter().write("{\"error\":\"Unauthorized\",\"message\":\"Authentication required\"}");
-                })
-            )
+                            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                            response.setContentType("application/json");
+                            response.getWriter().write("{\"error\":\"Unauthorized\",\"message\":\"Authentication required\"}");
+                        })
+                )
 
             // Use our custom authentication provider
             .authenticationProvider(authenticationProvider());
 
         log.info("✅ SecurityFilterChain configured with CustomAuthenticationProvider");
         return http.build();
+    }
+
+    private boolean isWebSocketRequest(jakarta.servlet.http.HttpServletRequest request) {
+        String connection = request.getHeader("Connection");
+        String upgrade = request.getHeader("Upgrade");
+        return "Upgrade".equalsIgnoreCase(connection) && "websocket".equalsIgnoreCase(upgrade);
     }
 
     @Bean
