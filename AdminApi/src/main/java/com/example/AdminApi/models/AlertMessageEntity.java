@@ -2,6 +2,7 @@ package com.example.AdminApi.models;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
+import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 
@@ -11,6 +12,7 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "alert_messages")
+@Data
 @NoArgsConstructor
 @AllArgsConstructor
 public class AlertMessageEntity {
